@@ -3,6 +3,6 @@
   "release": "https://github.com/heysalad-ai/bair1-xiao-bme280-firmware/releases/tag/v1.0.0-review",
   "download": "https://github.com/heysalad-ai/bair1-xiao-bme280-firmware/releases/download/v1.0.0-review/Bair1_Xiao-review-2026-10-30.zip",
   "anonymousDownloadVerified": true,
-  "sha256": "c41ad6e72bb7d0a8f29b76a78004d6256937ad56a6ff41a769a2aad45fe706b4",
-  "credentialsBlank": true
+  "credentialsBlank": true,
+  "sha256File": "public-firmware.sha256"
 }

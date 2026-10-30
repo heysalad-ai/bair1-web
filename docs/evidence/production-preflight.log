@@ -1,0 +1,2 @@
+preflight: 12/12 readings, retry/conflict/auth/field checks and production-configured fallback passed; 13 synthetic rows verified.
+Actual firmware accepted stored/duplicate and rejected conflict replies

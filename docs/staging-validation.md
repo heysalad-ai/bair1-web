@@ -1,3 +1,5 @@
+> Production update: the reviewed backend is now deployed. See [production deployment](production-deployment.md) for current status and the production-configured fallback. Device flashing remains on hold. Earlier approval holds below describe prior stages.
+
 # Staging validation and compatible rollback — 30 October 2026
 
 Authorized: isolated staging resources/deployments, synthetic telemetry, a compatible rollback, and public firmware sharing. Production deployment, production telemetry writes and device flashing remain on hold.

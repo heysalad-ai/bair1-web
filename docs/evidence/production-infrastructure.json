@@ -1,0 +1,73 @@
+{
+  "region": "eu-west-2",
+  "userName": "bair1-production-runtime-20261030",
+  "decisions": [
+    {
+      "table": "bair1-reading-events",
+      "action": "dynamodb:GetItem",
+      "decision": "allowed"
+    },
+    {
+      "table": "bair1-reading-events",
+      "action": "dynamodb:PutItem",
+      "decision": "allowed"
+    },
+    {
+      "table": "bair1-reading-events",
+      "action": "dynamodb:ConditionCheckItem",
+      "decision": "allowed"
+    },
+    {
+      "table": "bair1-devices",
+      "action": "dynamodb:GetItem",
+      "decision": "allowed"
+    },
+    {
+      "table": "bair1-devices",
+      "action": "dynamodb:PutItem",
+      "decision": "allowed"
+    },
+    {
+      "table": "bair1-devices",
+      "action": "dynamodb:ConditionCheckItem",
+      "decision": "allowed"
+    },
+    {
+      "table": "bair1-staging-20261030-readings",
+      "action": "dynamodb:GetItem",
+      "decision": "implicitDeny"
+    },
+    {
+      "table": "bair1-staging-20261030-readings",
+      "action": "dynamodb:PutItem",
+      "decision": "implicitDeny"
+    },
+    {
+      "table": "bair1-staging-20261030-readings",
+      "action": "dynamodb:ConditionCheckItem",
+      "decision": "implicitDeny"
+    }
+  ],
+  "settings": [
+    {
+      "table": "bair1-readings",
+      "status": "ACTIVE",
+      "billing": "PAY_PER_REQUEST",
+      "ttl": {
+        "TimeToLiveStatus": "ENABLED",
+        "AttributeName": "expiresAt"
+      },
+      "pitr": "ENABLED"
+    },
+    {
+      "table": "bair1-reading-events",
+      "status": "ACTIVE",
+      "billing": "PAY_PER_REQUEST",
+      "ttl": {
+        "TimeToLiveStatus": "ENABLED",
+        "AttributeName": "expiresAt"
+      },
+      "pitr": "ENABLED"
+    }
+  ]
+}

@@ -1,3 +1,5 @@
+> Production update: the reviewed backend is now deployed. See [production deployment](production-deployment.md) for current status and the production-configured fallback. Device flashing remains on hold. Earlier approval holds below describe prior stages.
+
 # Compatible ingestion-pause fallback
 
 Status: prepared and exercised in isolated staging. Production execution remains on hold.

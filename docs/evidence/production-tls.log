@@ -1,0 +1,7 @@
+Verified server hostname and chain using only the bundled firmware root CA.
+subject=CN=app.bair1.live
+issuer=C=US, O=Let's Encrypt, CN=YR2
+Verification: OK
+Verified peername: app.bair1.live
+Verify return code: 0 (ok)
+    Verify return code: 0 (ok)

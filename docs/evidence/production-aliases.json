@@ -1,0 +1,14 @@
+[
+  {
+    "host": "app.bair1.live",
+    "deploymentId": "dpl_Ee4Sy5MxRRk13ob9cqsSR1reKn8T"
+  },
+  {
+    "host": "bair1.live",
+    "deploymentId": "dpl_Ee4Sy5MxRRk13ob9cqsSR1reKn8T"
+  },
+  {
+    "host": "www.bair1.live",
+    "deploymentId": "dpl_Ee4Sy5MxRRk13ob9cqsSR1reKn8T"
+  }
+]
