@@ -1,0 +1,44 @@
+
+> bair1-web@0.1.0 test
+> node --test tests/measurement-labels.mjs tests/storage-config.mjs
+
+TAP version 13
+# Subtest: PM-only uploads preserve PM and leave AQI unavailable; explicit zero stays zero
+ok 1 - PM-only uploads preserve PM and leave AQI unavailable; explicit zero stays zero
+  ---
+  duration_ms: 12.548167
+  type: 'test'
+  ...
+# Subtest: Notehub PM-only events do not become AQI
+ok 2 - Notehub PM-only events do not become AQI
+  ---
+  duration_ms: 5.457209
+  type: 'test'
+  ...
+# Subtest: Dynamo omits missing AQI and round-trips it as null, not zero
+ok 3 - Dynamo omits missing AQI and round-trips it as null, not zero
+  ---
+  duration_ms: 18.04
+  type: 'test'
+  ...
+# Subtest: Unknown AQI has neutral presentation, while genuine zero remains Good
+ok 4 - Unknown AQI has neutral presentation, while genuine zero remains Good
+  ---
+  duration_ms: 4.169166
+  type: 'test'
+  ...
+# Subtest: preview cannot silently use production table names
+ok 5 - preview cannot silently use production table names
+  ---
+  duration_ms: 25.221208
+  type: 'test'
+  ...
+1..5
+# tests 5
+# suites 0
+# pass 5
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 309.817792

@@ -1,0 +1,7 @@
+{
+  "deployment": "https://bair1-ingestion-staging-m2u57i3m7-hey-salad-inc.vercel.app",
+  "rows": 30,
+  "minIntervalMs": 1999,
+  "maxIntervalMs": 2002,
+  "averageIntervalMs": 2000.8620689655172
+}

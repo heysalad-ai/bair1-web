@@ -1,0 +1,76 @@
+
+> bair1-web@0.1.0 build
+> next build
+
+⚠ Warning: Next.js inferred your workspace root, but it may not be correct.
+ We detected multiple lockfiles and selected the directory of /Users/peter-machona/package-lock.json as the root directory.
+ To silence this warning, set `turbopack.root` in your Next.js config, or consider removing one of the lockfiles if it's not needed.
+   See https://nextjs.org/docs/app/api-reference/config/next-config-js/turbopack#root-directory for more information.
+ Detected additional lockfiles: 
+   * /Users/peter-machona/Documents/ChatGPT/Product_Mgmt/work/bair1-two-second-ingestion/package-lock.json
+
+▲ Next.js 16.2.9 (Turbopack)
+
+  Creating an optimized production build ...
+✓ Compiled successfully in 4.5s
+  Running TypeScript ...
+  Finished TypeScript in 3.4s ...
+  Collecting page data using 9 workers ...
+  Generating static pages using 9 workers (0/24) ...
+  Generating static pages using 9 workers (6/24) 
+  Generating static pages using 9 workers (12/24) 
+  Generating static pages using 9 workers (18/24) 
+✓ Generating static pages using 9 workers (24/24) in 265ms
+  Finalizing page optimization ...
+
+Route (app)
+┌ ○ /
+├ ○ /_not-found
+├ ƒ /api/admin/bootstrap
+├ ƒ /api/admin/devices
+├ ƒ /api/admin/me
+├ ƒ /api/admin/users
+├ ƒ /api/chat
+├ ƒ /api/checkout
+├ ƒ /api/checkout/intent
+├ ƒ /api/developer/api-keys
+├ ƒ /api/developer/devices
+├ ƒ /api/devices/[deviceId]/share
+├ ƒ /api/environment
+├ ƒ /api/graphql
+├ ƒ /api/integrations/notehub
+├ ƒ /api/public/feeds/[slug]
+├ ƒ /api/public/insight/[slug]
+├ ƒ /api/readings
+├ ƒ /api/readings/backfill-locations
+├ ƒ /api/readings/latest
+├ ƒ /api/setup-promo
+├ ƒ /api/shared/devices/[deviceId]
+├ ƒ /api/v1/devices
+├ ƒ /api/v1/devices/[deviceId]
+├ ƒ /api/v1/devices/[deviceId]/analytics
+├ ƒ /api/v1/devices/[deviceId]/commands
+├ ƒ /api/v1/devices/[deviceId]/commands/[commandId]
+├ ƒ /api/v1/devices/[deviceId]/commands/ack
+├ ƒ /api/v1/devices/[deviceId]/commands/poll
+├ ƒ /api/v1/devices/[deviceId]/readings
+├ ƒ /api/v1/devices/[deviceId]/state
+├ ƒ /api/v1/export
+├ ƒ /api/voice/briefing
+├ ƒ /checkout
+├ ○ /dashboard
+├ ○ /developers
+├ ○ /device-setup
+├ ○ /docs
+├ ○ /encodehack
+├ ○ /firmware
+├ ƒ /live/[slug]
+├ ○ /order/success
+└ ƒ /share/[deviceId]
+
+
+ƒ Proxy (Middleware)
+
+○  (Static)   prerendered as static content
+ƒ  (Dynamic)  server-rendered on demand
+

@@ -1,0 +1,26 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "REVIEW ONLY: Bair1 ingestion receipts. Do not deploy without review approval.",
+  "Resources": {
+    "ReadingEvents": {
+      "Type": "AWS::DynamoDB::Table",
+      "DeletionPolicy": "Retain",
+      "UpdateReplacePolicy": "Retain",
+      "Properties": {
+        "TableName": "bair1-reading-events",
+        "BillingMode": "PAY_PER_REQUEST",
+        "AttributeDefinitions": [
+          {"AttributeName": "deviceId", "AttributeType": "S"},
+          {"AttributeName": "eventId", "AttributeType": "S"}
+        ],
+        "KeySchema": [
+          {"AttributeName": "deviceId", "KeyType": "HASH"},
+          {"AttributeName": "eventId", "KeyType": "RANGE"}
+        ],
+        "TimeToLiveSpecification": {"AttributeName": "expiresAt", "Enabled": true},
+        "PointInTimeRecoverySpecification": {"PointInTimeRecoveryEnabled": true},
+        "SSESpecification": {"SSEEnabled": true}
+      }
+    }
+  }
+}

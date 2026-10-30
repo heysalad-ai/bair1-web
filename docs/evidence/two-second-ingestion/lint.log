@@ -1,0 +1,168 @@
+
+> bair1-web@0.1.0 lint
+> eslint
+
+
+/Users/peter-machona/Documents/ChatGPT/Product_Mgmt/work/bair1-two-second-ingestion/src/app/checkout/embedded-checkout.tsx
+  91:3  warning  'tier' is defined but never used  @typescript-eslint/no-unused-vars
+
+/Users/peter-machona/Documents/ChatGPT/Product_Mgmt/work/bair1-two-second-ingestion/src/app/layout.tsx
+  29:9  warning  Custom fonts not added in `pages/_document.js` will only load for a single page. This is discouraged. See: https://nextjs.org/docs/messages/no-page-custom-font  @next/next/no-page-custom-font
+
+/Users/peter-machona/Documents/ChatGPT/Product_Mgmt/work/bair1-two-second-ingestion/src/app/live/[slug]/DeviceControlCard.tsx
+  49:5  warning  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+/Users/peter-machona/Documents/ChatGPT/Product_Mgmt/work/bair1-two-second-ingestion/src/app/live/[slug]/DeviceControlCard.tsx:49:5
+  47 |     if (!pendingCommand || !apiKey) return;
+  48 |     let cancelled = false;
+> 49 |     setPolling(true);
+     |     ^^^^^^^^^^ Avoid calling setState() directly within an effect
+  50 |     const id = window.setInterval(async () => {
+  51 |       try {
+  52 |         const res = await fetch(`/api/v1/devices/${deviceId}/commands/${pendingCommand.commandId}`, {  react-hooks/set-state-in-effect
+
+/Users/peter-machona/Documents/ChatGPT/Product_Mgmt/work/bair1-two-second-ingestion/src/app/live/[slug]/PublicFeedClient.tsx
+  182:19  warning  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+/Users/peter-machona/Documents/ChatGPT/Product_Mgmt/work/bair1-two-second-ingestion/src/app/live/[slug]/PublicFeedClient.tsx:182:19
+  180 |     try {
+  181 |       const stored = window.localStorage.getItem("bair1.apiKey");
+> 182 |       if (stored) setApiKey(stored);
+      |                   ^^^^^^^^^ Avoid calling setState() directly within an effect
+  183 |     } catch { /* ignore */ }
+  184 |   }, []);
+  185 |  react-hooks/set-state-in-effect
+
+/Users/peter-machona/Documents/ChatGPT/Product_Mgmt/work/bair1-two-second-ingestion/src/components/AdminView.tsx
+   49:10  warning  'showUserForm' is assigned a value but never used                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   @typescript-eslint/no-unused-vars
+   49:24  warning  'setShowUserForm' is assigned a value but never used                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                @typescript-eslint/no-unused-vars
+   50:10  warning  'userForm' is assigned a value but never used                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       @typescript-eslint/no-unused-vars
+   50:20  warning  'setUserForm' is assigned a value but never used                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    @typescript-eslint/no-unused-vars
+  100:19  warning  Unexpected any. Specify a different type                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            @typescript-eslint/no-explicit-any
+  107:5   warning  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+/Users/peter-machona/Documents/ChatGPT/Product_Mgmt/work/bair1-two-second-ingestion/src/components/AdminView.tsx:107:5
+  105 |
+  106 |   useEffect(() => {
+> 107 |     fetchData();
+      |     ^^^^^^^^^ Avoid calling setState() directly within an effect
+  108 |   }, [fetchData]);
+  109 |
+  110 |   const provisionDevice = async () => {  react-hooks/set-state-in-effect
+
+/Users/peter-machona/Documents/ChatGPT/Product_Mgmt/work/bair1-two-second-ingestion/src/components/AnalyticsView.tsx
+  51:7  warning  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+/Users/peter-machona/Documents/ChatGPT/Product_Mgmt/work/bair1-two-second-ingestion/src/components/AnalyticsView.tsx:51:7
+  49 |   useEffect(() => {
+  50 |     if (!deviceId) {
+> 51 |       setLoading(false);
+     |       ^^^^^^^^^^ Avoid calling setState() directly within an effect
+  52 |       return;
+  53 |     }
+  54 |  react-hooks/set-state-in-effect
+
+/Users/peter-machona/Documents/ChatGPT/Product_Mgmt/work/bair1-two-second-ingestion/src/components/EnvironmentCards.tsx
+    6:15  warning  Unexpected any. Specify a different type                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        @typescript-eslint/no-explicit-any
+    7:11  warning  Unexpected any. Specify a different type                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        @typescript-eslint/no-explicit-any
+    8:12  warning  Unexpected any. Specify a different type                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        @typescript-eslint/no-explicit-any
+   24:5   warning  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+/Users/peter-machona/Documents/ChatGPT/Product_Mgmt/work/bair1-two-second-ingestion/src/components/EnvironmentCards.tsx:24:5
+  22 |   useEffect(() => {
+  23 |     if (lat == null || lng == null) return;
+> 24 |     setLoading(true);
+     |     ^^^^^^^^^^ Avoid calling setState() directly within an effect
+  25 |     fetch(`/api/environment?lat=${lat}&lng=${lng}`)
+  26 |       .then((r) => r.json())
+  27 |       .then(setData)  react-hooks/set-state-in-effect
+   83:61  warning  Unexpected any. Specify a different type                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        @typescript-eslint/no-explicit-any
+  135:29  warning  Unexpected any. Specify a different type                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        @typescript-eslint/no-explicit-any
+
+/Users/peter-machona/Documents/ChatGPT/Product_Mgmt/work/bair1-two-second-ingestion/src/components/MapView.tsx
+   67:21  warning  Unexpected any. Specify a different type                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              @typescript-eslint/no-explicit-any
+   73:18  warning  Unexpected any. Specify a different type                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              @typescript-eslint/no-explicit-any
+  117:5   warning  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+/Users/peter-machona/Documents/ChatGPT/Product_Mgmt/work/bair1-two-second-ingestion/src/components/MapView.tsx:117:5
+  115 |   // Initial load
+  116 |   useEffect(() => {
+> 117 |     fetchDevices();
+      |     ^^^^^^^^^^^^ Avoid calling setState() directly within an effect
+  118 |   }, [fetchDevices]);
+  119 |
+  120 |   // Auto-refresh when tracking   react-hooks/set-state-in-effect
+  132:5   warning  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+/Users/peter-machona/Documents/ChatGPT/Product_Mgmt/work/bair1-two-second-ingestion/src/components/MapView.tsx:132:5
+  130 |   // Fetch trail when device changes
+  131 |   useEffect(() => {
+> 132 |     fetchTrail();
+      |     ^^^^^^^^^^ Avoid calling setState() directly within an effect
+  133 |   }, [fetchTrail]);
+  134 |
+  135 |   // Initialize map  react-hooks/set-state-in-effect
+  201:18  warning  The ref value 'markersRef.current' will likely have changed by the time this effect cleanup function runs. If this ref points to a node rendered by React, copy 'markersRef.current' to a variable inside the effect, and use that variable in the cleanup function                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   react-hooks/exhaustive-deps
+  307:33  warning  Error: Cannot call impure function during render
+
+`Date.now` is an impure function. Calling an impure function can produce unstable results that update unpredictably when the component happens to re-render. (https://react.dev/reference/rules/components-and-hooks-must-be-pure#components-and-hooks-must-be-idempotent).
+
+/Users/peter-machona/Documents/ChatGPT/Product_Mgmt/work/bair1-two-second-ingestion/src/components/MapView.tsx:307:33
+  305 |   }, [trail]);
+  306 |
+> 307 |   const timeSince = Math.floor((Date.now() - lastRefresh.getTime()) / 1000);
+      |                                 ^^^^^^^^^^ Cannot call impure function
+  308 |
+  309 |   return (
+  310 |     <div className="tab-content-enter px-4 pb-28">                                                                                                                                                                                                                                                                                                                                         react-hooks/purity
+
+/Users/peter-machona/Documents/ChatGPT/Product_Mgmt/work/bair1-two-second-ingestion/src/lib/google-env.ts
+  148:12  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/Users/peter-machona/Documents/ChatGPT/Product_Mgmt/work/bair1-two-second-ingestion/src/lib/users.ts
+  31:41  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+✖ 25 problems (0 errors, 25 warnings)
+

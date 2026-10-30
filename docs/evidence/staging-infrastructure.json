@@ -1,0 +1,46 @@
+{
+  "region": "eu-west-2",
+  "prefix": "bair1-staging-20261030-",
+  "tables": [
+    "bair1-staging-20261030-readings",
+    "bair1-staging-20261030-reading-events",
+    "bair1-staging-20261030-devices",
+    "bair1-staging-20261030-api-keys",
+    "bair1-staging-20261030-commands",
+    "bair1-staging-20261030-users"
+  ],
+  "decisions": [
+    {
+      "table": "bair1-readings",
+      "action": "dynamodb:PutItem",
+      "decision": "implicitDeny"
+    },
+    {
+      "table": "bair1-readings",
+      "action": "dynamodb:GetItem",
+      "decision": "implicitDeny"
+    },
+    {
+      "table": "bair1-staging-20261030-readings",
+      "action": "dynamodb:PutItem",
+      "decision": "allowed"
+    },
+    {
+      "table": "bair1-staging-20261030-readings",
+      "action": "dynamodb:GetItem",
+      "decision": "allowed"
+    }
+  ],
+  "ttl": [
+    {
+      "table": "bair1-staging-20261030-readings",
+      "TimeToLiveStatus": "ENABLED",
+      "AttributeName": "expiresAt"
+    },
+    {
+      "table": "bair1-staging-20261030-reading-events",
+      "TimeToLiveStatus": "ENABLED",
+      "AttributeName": "expiresAt"
+    }
+  ]
+}

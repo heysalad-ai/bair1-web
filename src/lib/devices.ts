@@ -1,5 +1,7 @@
+import { storageTable } from "./storage-config";
 import {
   DeleteItemCommand,
+  ConditionalCheckFailedException,
   GetItemCommand,
   PutItemCommand,
   ScanCommand,
@@ -8,7 +10,7 @@ import {
 } from "@aws-sdk/client-dynamodb";
 import { dynamoClient } from "./aws-dynamo";
 
-const TABLE = "bair1-devices";
+const TABLE = storageTable("bair1-devices");
 
 export type DeviceStatus = "active" | "inactive" | "provisioning";
 
@@ -66,11 +68,12 @@ export async function getDevice(deviceId: string): Promise<Device | null> {
   const result = await dynamoClient.send(new GetItemCommand({
     TableName: TABLE,
     Key: { deviceId: { S: deviceId } },
+    ConsistentRead: true,
   }));
   return result.Item ? parseItem(result.Item) : null;
 }
 
-export async function createDevice(device: Device): Promise<void> {
+export async function createDevice(device: Device, onlyIfAbsent = false): Promise<void> {
   const item: Record<string, AttributeValue> = {
     deviceId: { S: device.deviceId },
     name: { S: device.name },
@@ -82,7 +85,16 @@ export async function createDevice(device: Device): Promise<void> {
   };
   if (device.lat != null) item.lat = { N: String(device.lat) };
   if (device.lng != null) item.lng = { N: String(device.lng) };
-  await dynamoClient.send(new PutItemCommand({ TableName: TABLE, Item: item }));
+  await dynamoClient.send(new PutItemCommand({ TableName: TABLE, Item: item, ...(onlyIfAbsent ? { ConditionExpression: "attribute_not_exists(deviceId)" } : {}) }));
+}
+
+/** First writer owns an auto-registered device; competing ingestion must never replace its owner. */
+export async function claimDeviceForReading(device: Device): Promise<Device> {
+  try { await createDevice(device, true); }
+  catch (error) { if (!(error instanceof ConditionalCheckFailedException)) throw error; }
+  const existing = await getDevice(device.deviceId);
+  if (!existing) throw new Error("device registration unavailable");
+  return existing;
 }
 
 export async function updateDevice(

@@ -1,0 +1,20 @@
+Baseline retained 5/30 distinct two-second readings
+node:internal/modules/run_main:123
+    triggerUncaughtException(
+    ^
+
+AssertionError [ERR_ASSERTION]: Every distinct two-second reading must survive
+
+5 !== 30
+
+    at file:///Users/peter-machona/Documents/ChatGPT/Product_Mgmt/work/bair1-two-second-ingestion/tests/ingestion-baseline.mjs:13:9
+    at process.processTicksAndRejections (node:internal/process/task_queues:103:5) {
+  generatedMessage: false,
+  code: 'ERR_ASSERTION',
+  actual: 5,
+  expected: 30,
+  operator: 'strictEqual',
+  diff: 'simple'
+}
+
+Node.js v22.23.2

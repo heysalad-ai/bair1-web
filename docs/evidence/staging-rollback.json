@@ -1,0 +1,9 @@
+{
+  "rollback": "https://bair1-ingestion-staging-f53ihwnip-hey-salad-inc.vercel.app",
+  "readsOldAndNew": true,
+  "rejectsIngestionWith503": true,
+  "receiptsSurvive": true,
+  "candidateResumeDeduplicates": true,
+  "rowsBefore": 631,
+  "rowsAfter": 632
+}

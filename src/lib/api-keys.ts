@@ -1,3 +1,4 @@
+import { storageTable } from "./storage-config";
 import { createHash, randomBytes } from "node:crypto";
 import {
   GetItemCommand,
@@ -8,7 +9,7 @@ import {
 } from "@aws-sdk/client-dynamodb";
 import { dynamoClient } from "./aws-dynamo";
 
-const TABLE = "bair1-api-keys";
+const TABLE = storageTable("bair1-api-keys");
 
 export type ApiKeyScope =
   | "read:devices"

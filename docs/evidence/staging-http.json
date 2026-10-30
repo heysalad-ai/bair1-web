@@ -1,0 +1,19 @@
+{
+  "base": "https://bair1-ingestion-staging-m2u57i3m7-hey-salad-inc.vercel.app",
+  "backlogRetained": 600,
+  "legacyRows": 1,
+  "pacedRetained": 30,
+  "concurrentDuplicates": 12,
+  "checks": [
+    "capture timestamps",
+    "BME and dual ADC",
+    "raw payload",
+    "pagination",
+    "legacy row",
+    "conflict 409",
+    "missing auth 401",
+    "wrong owner 404",
+    "invalid number 400"
+  ],
+  "totalRowsBeforeRollback": 631
+}

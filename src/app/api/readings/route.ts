@@ -1,10 +1,16 @@
+import { ingestionPaused } from "@/lib/storage-config";
+import { validateReadingBody, InvalidReadingError } from "@/lib/reading-ingestion";
 import { NextRequest, NextResponse } from "next/server";
 import { extractApiKeyFromHeaders, validateApiKey } from "@/lib/api-keys";
 import { getLatestReadings, storeReading } from "@/lib/dynamo";
 import { resolveCellTower, resolveWifiAccessPoints, type WifiAccessPoint } from "@/lib/geolocation";
-import { getDevice, createDevice, updateDevice } from "@/lib/devices";
+import { getDevice, claimDeviceForReading, updateDevice } from "@/lib/devices";
 
 export async function POST(req: NextRequest) {
+  if (ingestionPaused()) return NextResponse.json(
+    { ok: false, stored: false, error: "ingestion paused; retain and retry this event" },
+    { status: 503, headers: { "Retry-After": "60" } },
+  );
   const principal = await validateApiKey(
     extractApiKeyFromHeaders(req.headers),
     ["write:readings"]
@@ -20,7 +26,14 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "invalid json" }, { status: 400 });
   }
 
-  const deviceId = String(body.deviceId ?? "unknown");
+  if (Buffer.byteLength(JSON.stringify(body), "utf8") > 16 * 1024) {
+    return NextResponse.json({ error: "reading exceeds 16 KiB" }, { status: 413 });
+  }
+  try { validateReadingBody(body); } catch (error) {
+    if (error instanceof InvalidReadingError) return NextResponse.json({ error: error.message }, { status: 400 });
+    throw error;
+  }
+  const deviceId = String(body.deviceId);
   const pm25 = body.pm25 != null ? Number(body.pm25) : null;
   const aqi = body.aqi == null ? null : Number(body.aqi);
   if (aqi !== null && (!["number", "string"].includes(typeof body.aqi) || String(body.aqi).trim() === "" || !Number.isFinite(aqi) || aqi < 0)) {
@@ -67,8 +80,22 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const existing = await getDevice(deviceId);
-    if (principal.type === "developer" && existing && existing.ownerId !== principal.userId) {
+    let existing = await getDevice(deviceId);
+    if (!existing) {
+      const family = body.family ? String(body.family) : "";
+      existing = await claimDeviceForReading({
+        deviceId,
+        name: String(body.deviceName ?? body.name ?? (family ? `${family} sensor` : deviceId)),
+        location: "",
+        lat: body.lat != null ? Number(body.lat) : null,
+        lng: body.lng != null ? Number(body.lng) : null,
+        ownerId: principal.type === "developer" ? principal.userId : "",
+        orgId: principal.orgId,
+        status: "active",
+        createdAt: new Date().toISOString(),
+      });
+    }
+    if (principal.type === "developer" && existing.ownerId !== principal.userId) {
       return NextResponse.json({ error: "device not found" }, { status: 404 });
     }
 
@@ -84,43 +111,36 @@ export async function POST(req: NextRequest) {
       sample,
       transport,
       rawPayload: body,
+      authorizedOwnerId: principal.type === "developer" ? principal.userId : undefined,
+      capturedAt: (body.capturedAt ?? body.measuredAt ?? body.epochSeconds ?? body.when ?? null) as string | number | null,
+      eventId: body.eventId as string | undefined,
+      bootSession: body.bootSession as string | undefined,
+      sequence: (body.sequence ?? body.sample) as string | number | undefined,
     });
 
-    // Auto-register device if not yet known
-    if (!existing) {
-      const family = body.family ? String(body.family) : "";
-      const preferredName =
-        body.deviceName ? String(body.deviceName) :
-        body.name ? String(body.name) :
-        family ? `${family} sensor` :
-        deviceId;
-      await createDevice({
-        deviceId,
-        name: preferredName,
-        location: "",
-        lat: body.lat != null ? Number(body.lat) : null,
-        lng: body.lng != null ? Number(body.lng) : null,
-        ownerId: principal.type === "developer" ? principal.userId : "",
-        orgId: principal.orgId,
-        status: "active",
-        createdAt: new Date().toISOString(),
-      });
-    } else if (body.lat != null && body.lng != null) {
+    if (stored.outcome === "conflict") {
+      return NextResponse.json({ ok: false, stored: false, outcome: "conflict", error: "event identity already used for different data" }, { status: 409 });
+    }
+
+    if (body.lat != null && body.lng != null) {
       await updateDevice(deviceId, { lat: Number(body.lat), lng: Number(body.lng) });
     }
 
     return NextResponse.json({
       ok: true,
-      stored,
+      stored: stored.outcome === "stored",
+      outcome: stored.outcome,
+      capturedAt: stored.capturedAt,
+      receivedAt: stored.receivedAt,
+      clockQuality: stored.clockQuality,
       deviceId,
       aqi,
       pm25,
-      timestamp: new Date().toISOString(),
+      timestamp: stored.timestamp,
     });
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "unknown error";
-    console.error("[readings] POST error:", message);
-    return NextResponse.json({ error: message }, { status: 500 });
+    console.error("[readings] persistence unavailable", err instanceof Error ? err.name : "unknown");
+    return NextResponse.json({ ok: false, stored: false, error: "reading storage unavailable; retry this event" }, { status: 503 });
   }
 }
 

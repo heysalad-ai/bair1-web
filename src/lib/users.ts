@@ -1,3 +1,4 @@
+import { storageTable } from "./storage-config";
 import {
   DynamoDBClient,
   GetItemCommand,
@@ -15,7 +16,7 @@ const client = new DynamoDBClient({
   },
 });
 
-const TABLE = "bair1-users";
+const TABLE = storageTable("bair1-users");
 
 export type Role = "super_admin" | "admin" | "user";
 

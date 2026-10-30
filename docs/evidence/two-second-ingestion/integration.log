@@ -1,0 +1,77 @@
+
+> bair1-web@0.1.0 test:ingestion
+> python3 tests/firmware-contract.py && BAIR1_FIRMWARE_FIXTURE=/tmp/bair1-firmware-payload.json node --test tests/reading-ingestion.integration.mjs && python3 tests/check-firmware-replies.py
+
+Actual sketch serializer compiled; generated synthetic payload in /tmp/bair1-firmware-payload.json
+TAP version 13
+# Subtest: 600 two-second samples survive out-of-order backlog and read-back with every original field
+ok 1 - 600 two-second samples survive out-of-order backlog and read-back with every original field
+  ---
+  duration_ms: 3342.551584
+  type: 'test'
+  ...
+# Subtest: same instant distinct events, multiple devices, reboot sequence and inclusive range boundaries
+ok 2 - same instant distinct events, multiple devices, reboot sequence and inclusive range boundaries
+  ---
+  duration_ms: 39.537042
+  type: 'test'
+  ...
+# Subtest: sequential/concurrent retry and lost HTTP acknowledgement store exactly once
+ok 3 - sequential/concurrent retry and lost HTTP acknowledgement store exactly once
+  ---
+  duration_ms: 55.001792
+  type: 'test'
+  ...
+# Subtest: event identity reuse with changed measurements conflicts; transient retry counters do not
+ok 4 - event identity reuse with changed measurements conflicts; transient retry counters do not
+  ---
+  duration_ms: 67.550125
+  type: 'test'
+  ...
+# Subtest: unknown clock is explicit, stable identity still deduplicates, legacy and epoch inputs work
+ok 5 - unknown clock is explicit, stable identity still deduplicates, legacy and epoch inputs work
+  ---
+  duration_ms: 33.584417
+  type: 'test'
+  ...
+# Subtest: auth, ownership, shape, size and finite-value failures do not persist readings
+ok 6 - auth, ownership, shape, size and finite-value failures do not persist readings
+  ---
+  duration_ms: 40.324875
+  type: 'test'
+  ...
+# [readings] persistence unavailable ResourceNotFoundException
+# Subtest: missing event table fails closed, never acknowledges or leaves a partial reading
+ok 7 - missing event table fails closed, never acknowledges or leaves a partial reading
+  ---
+  duration_ms: 8.730875
+  type: 'test'
+  ...
+# Subtest: actual native firmware payload round-trips and captures real replies for acknowledgement check
+ok 8 - actual native firmware payload round-trips and captures real replies for acknowledgement check
+  ---
+  duration_ms: 19.413917
+  type: 'test'
+  ...
+# Subtest: concurrent auto-registration by different owners never mixes readings or replaces ownership
+ok 9 - concurrent auto-registration by different owners never mixes readings or replaces ownership
+  ---
+  duration_ms: 7.25275
+  type: 'test'
+  ...
+# Subtest: Notehub air-reading response remains boolean and retries deduplicate
+ok 10 - Notehub air-reading response remains boolean and retries deduplicate
+  ---
+  duration_ms: 16.653084
+  type: 'test'
+  ...
+1..10
+# tests 10
+# suites 0
+# pass 10
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 4004.420542
+Actual firmware accepted stored/duplicate and rejected conflict replies

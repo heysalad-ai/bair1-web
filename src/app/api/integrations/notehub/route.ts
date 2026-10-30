@@ -1,3 +1,4 @@
+import { ingestionPaused } from "@/lib/storage-config";
 import { NextRequest, NextResponse } from "next/server";
 import { getDevice, createDevice, updateDevice } from "@/lib/devices";
 import { setNotecardTelemetry, storeReading } from "@/lib/dynamo";
@@ -6,6 +7,10 @@ import { normalizeNotehubEvent, verifyNotehubSecret } from "@/lib/notehub";
 export const dynamic = "force-dynamic";
 
 export async function POST(req: NextRequest) {
+  if (ingestionPaused()) return NextResponse.json(
+    { ok: false, stored: false, error: "ingestion paused; retain and retry this event" },
+    { status: 503, headers: { "Retry-After": "60" } },
+  );
   const routeSecret = process.env.NOTEHUB_ROUTE_SECRET;
   const idSalt = process.env.NOTEHUB_DEVICE_ID_SALT ?? routeSecret;
   if (!routeSecret || !idSalt) {
@@ -94,7 +99,8 @@ export async function POST(req: NextRequest) {
       ok: true,
       deviceId: normalized.publicDeviceId,
       telemetryStored: true,
-      readingStored: storedReading,
+      readingStored: storedReading ? storedReading.outcome === "stored" : false,
+      readingOutcome: storedReading ? storedReading.outcome : null,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "invalid event";

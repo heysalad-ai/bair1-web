@@ -1,3 +1,4 @@
+import { storageTable } from "./storage-config";
 import {
   PutItemCommand,
   QueryCommand,
@@ -10,12 +11,23 @@ import {
 } from "@aws-sdk/client-dynamodb";
 import { dynamoClient } from "./aws-dynamo";
 
-const TABLE = "bair1-readings";
-const RETENTION_SECONDS = 14 * 24 * 60 * 60;
+import { persistReading, type IngestionIdentity, type IngestionResult } from "./reading-ingestion";
+
+const TABLE = storageTable("bair1-readings");
 
 export interface Reading {
   deviceId: string;
   timestamp: string;
+  capturedAt: string | null;
+  receivedAt: string | null;
+  clockQuality: "device" | "gateway" | "unknown";
+  altitudeMeters: number | null;
+  adcD3Raw: number | null;
+  adcD2Raw: number | null;
+  adcD3PinVoltage: number | null;
+  adcD2PinVoltage: number | null;
+  adcD3InputVoltage: number | null;
+  adcD2InputVoltage: number | null;
   aqi: number | null;
   gasRaw: number | null;
   gasVoltage: number | null;
@@ -52,7 +64,8 @@ export interface Reading {
 
 export type ReadingInput = Omit<
   Reading,
-  | "timestamp"
+  | "timestamp" | "capturedAt" | "receivedAt" | "clockQuality"
+  | "altitudeMeters" | "adcD3Raw" | "adcD2Raw" | "adcD3PinVoltage" | "adcD2PinVoltage" | "adcD3InputVoltage" | "adcD2InputVoltage"
   | "lat" | "lng" | "locationAccuracy"
   | "pm1" | "pm25" | "pm4" | "pm10"
   | "sensorModel" | "board"
@@ -64,7 +77,7 @@ export type ReadingInput = Omit<
 > & {
   rawPayload: Record<string, unknown>;
   timestamp?: string;
-};
+} & IngestionIdentity;
 
 type StoredReading = {
   deviceId: string;
@@ -101,7 +114,17 @@ function parseItem(item: Record<string, AttributeValue>): Reading {
   const raw = parseRawPayload(item);
   return {
     deviceId: text(item, "deviceId") ?? "unknown",
-    timestamp: text(item, "timestamp") ?? "",
+    timestamp: text(item, "readingAt") ?? text(item, "timestamp") ?? "",
+    capturedAt: text(item, "capturedAt"),
+    receivedAt: text(item, "receivedAt"),
+    clockQuality: (text(item, "clockQuality") ?? "unknown") as Reading["clockQuality"],
+    altitudeMeters: rawNumber(raw, "altitudeMeters"),
+    adcD3Raw: rawNumber(raw, "adcD3Raw"),
+    adcD2Raw: rawNumber(raw, "adcD2Raw"),
+    adcD3PinVoltage: rawNumber(raw, "adcD3PinVoltage"),
+    adcD2PinVoltage: rawNumber(raw, "adcD2PinVoltage"),
+    adcD3InputVoltage: rawNumber(raw, "adcD3InputVoltage"),
+    adcD2InputVoltage: rawNumber(raw, "adcD2InputVoltage"),
     aqi: number(item, "aqi"),
     gasRaw: number(item, "gasRaw"),
     gasVoltage: number(item, "gasVoltage"),
@@ -206,28 +229,18 @@ export async function getReadingsInRange(deviceId: string, from: string, to: str
     ExpressionAttributeNames: { "#timestamp": "timestamp" },
     ExpressionAttributeValues: {
       ":deviceId": { S: deviceId },
-      ":from": { S: from },
-      ":to": { S: to },
+      ":from": { S: new Date(from).toISOString() },
+      ":to": { S: new Date(to).toISOString() + "~" },
     },
     ScanIndexForward: true,
   });
   return items.map(parseItem);
 }
 
-export async function storeReading(input: ReadingInput): Promise<boolean> {
-  const timestamp = input.timestamp ?? new Date().toISOString();
-  const latest = await getLatestReading(input.deviceId);
-  if (latest && new Date(timestamp).getTime() - new Date(latest.timestamp).getTime() < 12_000) {
-    return false;
-  }
-
-  const recordedAt = new Date(timestamp);
-  const expiresAt = Math.floor((Number.isNaN(recordedAt.getTime()) ? Date.now() : recordedAt.getTime()) / 1000) + RETENTION_SECONDS;
+export async function storeReading(input: ReadingInput): Promise<IngestionResult> {
   const item: Record<string, AttributeValue> = {
     deviceId: { S: input.deviceId },
-    timestamp: { S: timestamp },
     rawPayload: { S: JSON.stringify(input.rawPayload) },
-    expiresAt: { N: String(expiresAt) },
   };
   const optionalNumbers = {
     aqi: input.aqi,
@@ -249,8 +262,10 @@ export async function storeReading(input: ReadingInput): Promise<boolean> {
     if (value) item[key] = { S: value };
   }
 
-  await dynamoClient.send(new PutItemCommand({ TableName: TABLE, Item: item }));
-  return true;
+  return persistReading(item, input.rawPayload, {
+    ...input,
+    capturedAt: input.capturedAt ?? input.timestamp ?? null,
+  });
 }
 
 export async function getReadingsMissingLocation(): Promise<StoredReading[]> {
@@ -280,7 +295,7 @@ export async function updateReadingRawPayload(reading: StoredReading): Promise<v
 // Table: bair1-commands. PK: deviceId, SK: commandId (sortable ISO-ish).
 // TTL 1 hour. Each command: {deviceId, commandId, type, payload, status, result, createdAt, expiresAt}.
 
-const COMMANDS_TABLE = "bair1-commands";
+const COMMANDS_TABLE = storageTable("bair1-commands");
 const COMMAND_TTL_SECONDS = 60 * 60;
 
 export type CommandType =

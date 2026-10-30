@@ -1,0 +1,22 @@
+[
+  {
+    "table": "bair1-staging-20261030-readings",
+    "status": "ACTIVE",
+    "billing": "PAY_PER_REQUEST",
+    "ttl": {
+      "TimeToLiveStatus": "ENABLED",
+      "AttributeName": "expiresAt"
+    },
+    "pitr": "ENABLED"
+  },
+  {
+    "table": "bair1-staging-20261030-reading-events",
+    "status": "ACTIVE",
+    "billing": "PAY_PER_REQUEST",
+    "ttl": {
+      "TimeToLiveStatus": "ENABLED",
+      "AttributeName": "expiresAt"
+    },
+    "pitr": "ENABLED"
+  }
+]
