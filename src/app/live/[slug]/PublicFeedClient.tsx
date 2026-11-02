@@ -18,7 +18,7 @@ import type { PublicFeedSnapshot } from "@/lib/public-feeds";
 import AirInsightCard from "./AirInsightCard";
 import LondonAirMap from "./LondonAirMap";
 import LiveAirChat from "./LiveAirChat";
-import DeviceControlCard from "./DeviceControlCard";
+import { measurementFreshness, observationLabel } from "@/lib/measurement-contract";
 import MultiSensorPanel from "./MultiSensorPanel";
 
 type Props = {
@@ -173,15 +173,8 @@ function PmTooltip({ active, label, payload }: TooltipProps) {
 export default function PublicFeedClient({ initialSnapshot }: Props) {
   const [snapshot, setSnapshot] = useState(initialSnapshot);
   const [activeView, setActiveView] = useState<"live" | "map" | "studio">("live");
-  const [apiKey, setApiKey] = useState<string | null>(null);
-
-  // Load an API key from localStorage (set by the dashboard settings page).
-  useEffect(() => {
-    try {
-      const stored = window.localStorage.getItem("bair1.apiKey");
-      if (stored) setApiKey(stored);
-    } catch { /* ignore */ }
-  }, []);
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => { const timer = setInterval(() => setNow(Date.now()), 15000); return () => clearInterval(timer); }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -290,11 +283,10 @@ export default function PublicFeedClient({ initialSnapshot }: Props) {
           </div>
           <div className="flex flex-col gap-3 text-xs text-muted sm:flex-row sm:items-center sm:gap-5">
             <span className="inline-flex items-center gap-2 text-ink">
-              <i className="h-2 w-2 rounded-full bg-[#00e676]" />
-              Live feed
+              {measurementFreshness(snapshot.latest[0]?.capturedAt || snapshot.latest[0]?.timestamp, now)} measurements
             </span>
             <span>{snapshot.location}</span>
-            <span>Updated {formatTime(snapshot.updatedAt)}</span>
+            <span>Measured {observationLabel(snapshot.latest[0]?.capturedAt || snapshot.latest[0]?.timestamp, now)}</span>
             <Link href="/docs" className="hidden transition hover:text-ink md:inline">Docs</Link>
             <button
               type="button"
@@ -529,11 +521,7 @@ export default function PublicFeedClient({ initialSnapshot }: Props) {
               <AirInsightCard slug={snapshot.slug} />
             </div>
 
-            {referenceDeviceId ? (
-              <div className="mt-4">
-                <DeviceControlCard deviceId={referenceDeviceId} apiKey={apiKey} />
-              </div>
-            ) : null}
+
           </>
         ) : activeView === "map" ? (
           <LondonAirMap

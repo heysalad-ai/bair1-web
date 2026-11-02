@@ -66,7 +66,7 @@ const tabs: NavigationTab[] = [
   },
   {
     id: "developer",
-    label: "Integrations",
+    label: "Devices & access",
     description: "Notehub, API and firmware connections",
     icon: (
       <svg width="22" height="22" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -78,7 +78,7 @@ const tabs: NavigationTab[] = [
   },
   {
     id: "admin",
-    label: "Team & devices",
+    label: "Platform admin",
     mobileLabel: "Team",
     description: "Manage workspace access and hardware",
     icon: (
@@ -96,7 +96,7 @@ const adminTab = tabs[5];
 
 export default function Navigation({ active, onChange, role }: NavigationProps) {
   const [moreOpen, setMoreOpen] = useState(false);
-  const isAdmin = role === "admin" || role === "super_admin";
+  const isAdmin = role === "super_admin";
   const secondaryTabs = isAdmin ? [integrationTab, adminTab] : [integrationTab];
   const secondaryActive = secondaryTabs.some((tab) => tab.id === active);
 
@@ -157,7 +157,7 @@ export default function Navigation({ active, onChange, role }: NavigationProps) 
 
         <div className="mt-auto rounded-xl border border-border bg-bg/55 px-3 py-3">
           <div className="text-xs font-medium text-ink/80">
-            {isAdmin ? "Workspace admin" : "Workspace member"}
+            {isAdmin ? "Platform admin" : "Customer account"}
           </div>
           <div className="mt-1 text-[11px] leading-4 text-muted/60">
             {isAdmin ? "Monitor, integrate and manage access." : "Monitor devices and use air guidance."}

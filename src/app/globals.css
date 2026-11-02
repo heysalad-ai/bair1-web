@@ -108,3 +108,10 @@ h3:not([class*="text-"]) {
 .prose-cap {
   max-width: 65ch;
 }
+
+.access-input { display: block; width: 100%; margin-top: .5rem; padding: .65rem .75rem; border: 1px solid var(--color-border, #d0d6d2); border-radius: .5rem; background: var(--color-surface, white); color: inherit; }
+.access-button { padding: .65rem 1rem; border: 1px solid var(--color-border, #d0d6d2); border-radius: .5rem; font-size: .875rem; font-weight: 600; }
+.access-button:hover { background: var(--color-surface, #f0f5f1); }
+.access-button:disabled { opacity: .5; cursor: wait; }
+.access-input:focus-visible, .access-button:focus-visible { outline: 2px solid var(--color-primary, #346644); outline-offset: 3px; }
+::selection { background: #c9e7d5; color: #18372a; }

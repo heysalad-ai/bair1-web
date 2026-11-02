@@ -35,11 +35,14 @@ export default function SharedDeviceView({
   token: string;
   initialSnapshot: SharedDeviceSnapshot;
 }) {
+  const [unavailable, setUnavailable] = useState(false);
   const [snapshot, setSnapshot] = useState(initialSnapshot);
   useEffect(() => {
     const refresh = async () => {
+      try {
       const response = await fetch(`/api/shared/devices/${encodeURIComponent(deviceId)}?token=${encodeURIComponent(token)}`);
-      if (response.ok) setSnapshot(await response.json());
+      if (response.ok) { setSnapshot(await response.json()); setUnavailable(false); } else setUnavailable(true);
+      } catch { setUnavailable(true); }
     };
     const interval = window.setInterval(() => void refresh(), 60_000);
     return () => window.clearInterval(interval);
@@ -56,13 +59,14 @@ export default function SharedDeviceView({
     })), [snapshot.history]);
   const telemetry = snapshot.telemetry;
 
+  if (unavailable) return <main className="m-auto max-w-lg p-8"><h1 className="text-2xl font-semibold">Shared view unavailable</h1><p className="mt-4">The link may have expired or been revoked, or the service may be offline. Ask the device owner for a current link.</p></main>;
   return (
     <main className="min-h-screen bg-bg text-ink">
       <header className="border-b border-border bg-surface/80 backdrop-blur-xl">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-5 py-4">
           <Logo />
           <span className="rounded-full border border-primary/25 bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
-            Shared live view
+            Shared device view
           </span>
         </div>
       </header>
@@ -85,7 +89,7 @@ export default function SharedDeviceView({
           {[
             ["Temperature", value(telemetry?.temperature, "°C")],
             ["Humidity", value(telemetry?.humidity, "%")],
-            ["Pressure", value(telemetry?.pressure == null ? null : telemetry.pressure / 100, " hPa", 0)],
+            ["Pressure", value(telemetry?.pressureUnit !== "hPa" ? null : telemetry.pressure, " hPa", 0)],
             ["Battery", value(telemetry?.batteryVoltage, " V", 2)],
           ].map(([label, metric]) => (
             <div key={label} className="rounded-2xl border border-border bg-surface p-5">

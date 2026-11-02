@@ -34,7 +34,7 @@ const legend = [
 
 const REFRESH_INTERVAL = 15000; // 15 seconds
 
-export default function MapView() {
+export default function MapView({ deviceId }: { deviceId?: string }) {
   const authenticatedFetch = useAuthenticatedFetch();
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<mapboxgl.Map | null>(null);
@@ -43,7 +43,7 @@ export default function MapView() {
   const [trail, setTrail] = useState<TrailPoint[]>([]);
   const [loading, setLoading] = useState(true);
   const [tracking, setTracking] = useState(true);
-  const [selectedDevice, setSelectedDevice] = useState<string | null>(null);
+  const [selectedDevice, setSelectedDevice] = useState<string | null>(deviceId ?? null);
   const [lastRefresh, setLastRefresh] = useState<Date>(new Date());
   const [trailHours, setTrailHours] = useState(24);
 
@@ -62,7 +62,7 @@ export default function MapView() {
       });
       if (!res.ok) throw new Error("Failed to fetch");
       const json = await res.json();
-      const devices = json.data?.registeredDevices ?? [];
+      const devices = (json.data?.registeredDevices ?? []).filter((d: SensorPin) => !deviceId || d.deviceId === deviceId);
       const pins: SensorPin[] = devices
         .filter((d: any) => {
           // Use latest reading's lat/lng if available, else device's registered lat/lng
@@ -86,7 +86,7 @@ export default function MapView() {
       setLastRefresh(new Date());
     } catch {}
     setLoading(false);
-  }, [authenticatedFetch, selectedDevice]);
+  }, [authenticatedFetch, selectedDevice, deviceId]);
 
   // Fetch location trail for selected device
   const fetchTrail = useCallback(async () => {
