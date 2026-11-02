@@ -1,6 +1,7 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { DynamoDBClient, CreateTableCommand, DeleteTableCommand, UpdateItemCommand, GetItemCommand } from '@aws-sdk/client-dynamodb';
 import { createLoader } from './helpers/load-ts.mjs';
 
@@ -14,16 +15,20 @@ const created = [];
 const a = randomUUID(), b = randomUUID();
 before(async () => {
   process.env.BAIR1_ACCESS_ENABLED = 'true';
-  for (const [TableName, pk, sk] of [['bair1-access', 'scope', 'entry'], ['bair1-devices', 'deviceId'], ['bair1-readings', 'deviceId', 'timestamp'], ['bair1-reading-events', 'deviceId', 'eventId'], ['bair1-commands', 'deviceId', 'commandId']]) {
-    const input = { TableName, BillingMode: 'PAY_PER_REQUEST', KeySchema: [{ AttributeName: pk, KeyType: 'HASH' }, ...(sk ? [{ AttributeName: sk, KeyType: 'RANGE' }] : [])], AttributeDefinitions: [{ AttributeName: pk, AttributeType: 'S' }, ...(sk ? [{ AttributeName: sk, AttributeType: 'S' }] : [])] };
-    if (TableName === 'bair1-access') {
-      input.AttributeDefinitions.push({ AttributeName: 'userId', AttributeType: 'S' }, { AttributeName: 'workspaceId', AttributeType: 'S' });
-      input.GlobalSecondaryIndexes = [{ IndexName: 'userId-workspaceId-index', KeySchema: [{ AttributeName: 'userId', KeyType: 'HASH' }, { AttributeName: 'workspaceId', KeyType: 'RANGE' }], Projection: { ProjectionType: 'ALL' } }];
-    }
-    await client.send(new CreateTableCommand(input)); created.push(TableName);
+  process.env.BAIR1_PAID_FEATURES_ENABLED = 'true';
+  const template = JSON.parse(readFileSync('infrastructure/staging-tables.review.json', 'utf8'));
+  for (const resource of Object.values(template.Resources)) {
+    const properties = resource.Properties;
+    // Only the loopback fixture namespace is substituted; no cloud endpoint exists.
+    const TableName = properties.TableName['Fn::Sub'].replace('${TablePrefix}', 'bair1-');
+    await client.send(new CreateTableCommand({ TableName, BillingMode: properties.BillingMode,
+      KeySchema: properties.KeySchema, AttributeDefinitions: properties.AttributeDefinitions,
+      ...(properties.GlobalSecondaryIndexes ? { GlobalSecondaryIndexes: properties.GlobalSecondaryIndexes } : {}),
+    }));
+    created.push(TableName);
   }
 });
-after(async () => { for (const TableName of created.reverse()) await client.send(new DeleteTableCommand({ TableName })); client.destroy(); delete process.env.BAIR1_ACCESS_ENABLED; });
+after(async () => { for (const TableName of created.reverse()) await client.send(new DeleteTableCommand({ TableName })); client.destroy(); delete process.env.BAIR1_ACCESS_ENABLED; delete process.env.BAIR1_PAID_FEATURES_ENABLED; });
 function fixture(id, ownerId = a, extra = {}) { return { deviceId: id, ownerId, orgId: 'default', name: 'Synthetic fixture', status: 'active', location: '', lat: null, lng: null, createdAt: new Date().toISOString(), ...extra }; }
 function actor(id) { return { kind: 'user', user: { userId: id, orgId: 'default', role: 'user' } }; }
 
@@ -101,10 +106,12 @@ test('Disabled access storage fails closed without offering legacy permanent sha
   assert.equal(await store.storedShareValid(randomUUID(), randomUUID(), a, 'legacy'), false);
   await assert.rejects(store.createWorkspace(a, 'Disabled'));
   process.env.BAIR1_ACCESS_ENABLED = 'true';
+  process.env.BAIR1_PAID_FEATURES_ENABLED = 'true';
 });
 
 test('History pages retain all fields and bind cursors to device, range and ownership generation', async () => {
   process.env.BAIR1_ACCESS_ENABLED = 'true';
+  process.env.BAIR1_PAID_FEATURES_ENABLED = 'true';
   const id = randomUUID(), other = randomUUID(), base = Date.now() - 60000;
   await devices.createDevice(fixture(id, a)); await devices.createDevice(fixture(other, a));
   for (let i = 0; i < 8; i++) await db.storeReading({ deviceId: id, capturedAt: new Date(base + i*1000).toISOString(), eventId: randomUUID(), aqi: null, rawPayload: { temperature: i, adcD3Raw: i, pressure: 1010 } });
@@ -140,9 +147,12 @@ test('Distributed budgets are atomic across concurrent workers and fail closed w
   assert.equal(results.filter(r => r.status === 'rejected' && r.reason.status === 429).length, 5);
   const {Item} = await client.send(new GetItemCommand({TableName:'bair1-access',Key:{scope:{S:`usage:chat:${new Date().toISOString().slice(0,10)}`},entry:{S:'global'}}}));
   assert.equal(Number(Item.count.N), 30); // rejected subject reservations do not consume global capacity
+  delete process.env.BAIR1_PAID_FEATURES_ENABLED;
+  await assert.rejects(usage.reserveUsage('voice', subject), error => error.status === 503);
   delete process.env.BAIR1_ACCESS_ENABLED;
   await assert.rejects(usage.reserveUsage('voice', subject), error => error.status === 503);
   process.env.BAIR1_ACCESS_ENABLED = 'true';
+  process.env.BAIR1_PAID_FEATURES_ENABLED = 'true';
 });
 test('Read snapshots reject ownership changes and workspace revocation during retrieval',async()=>{
  const id=randomUUID();await devices.createDevice(fixture(id,a));
@@ -162,4 +172,14 @@ test('Command enqueue, acknowledgement and state writes cannot cross enrollment 
  await assert.rejects(db.ackCommand(id,command.commandId,true,null,before));
  await assert.rejects(db.setDeviceState(id,{on:true,brightness:12},null,before));
  assert.equal((await db.pollCommands(id)).length,0);
+});
+test('Reviewed staging registry indexes serve owner and workspace queries with current records',async()=>{
+ process.env.BAIR1_REGISTRY_INDEXES_ENABLED='true';
+ try{
+  const id=randomUUID(),workspace='workspace:'+randomUUID();await devices.createDevice(fixture(id,a,{orgId:workspace}));
+  assert.ok((await devices.getDevicesForUser(a)).some(row=>row.deviceId===id));
+  assert.ok((await devices.getDevicesForOrg(workspace)).some(row=>row.deviceId===id));
+  await client.send(new UpdateItemCommand({TableName:'bair1-devices',Key:{deviceId:{S:id}},UpdateExpression:'SET ownerId = :u',ExpressionAttributeValues:{':u':{S:b}}}));
+  assert.ok(!(await devices.getDevicesForUser(a)).some(row=>row.deviceId===id));
+ }finally{delete process.env.BAIR1_REGISTRY_INDEXES_ENABLED;}
 });

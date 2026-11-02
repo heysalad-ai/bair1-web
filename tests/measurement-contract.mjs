@@ -36,3 +36,8 @@ test('Geolocation disables server-IP fallback and discards SSIDs and inaccurate 
     assert.equal(await geo.resolveWifiAccessPoints([{macAddress:'00:00:00:00:00:00'}]), null);
   } finally { global.fetch = previousFetch; if (previousKey === undefined) delete process.env.GOOGLE_MAPS_API_KEY; else process.env.GOOGLE_MAPS_API_KEY = previousKey; }
 });
+test('Chart data keeps zero, missing measurements and long gaps without connecting them',()=>{
+ const {historySeries}=load('src/lib/measurement-contract.ts'), now=Date.now();
+ const result=historySeries([{timestamp:new Date(now).toISOString(),pm25:0},{timestamp:new Date(now+1000).toISOString(),pm25:null},{timestamp:new Date(now+600000).toISOString(),pm25:4}], 'pm25');
+ assert.equal(result.length,4);assert.equal(result[0].value,0);assert.equal(result[1].value,null);assert.equal(result[2].value,null);assert.equal(result[3].value,4);
+});

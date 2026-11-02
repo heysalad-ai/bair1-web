@@ -99,6 +99,9 @@ jobs:
           NEXT_PUBLIC_MAPBOX_TOKEN: ""
           STRIPE_SECRET_KEY: sk_test_placeholder
 
+      - name: Production-build HTTP authorization checks
+        run: npm run test:runtime
+
   database:
     name: Database and firmware contracts
     runs-on: ubuntu-latest

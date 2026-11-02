@@ -111,6 +111,19 @@ export async function PATCH(request: Request) {
     : undefined;
   const orgId =
     typeof body.workspaceId === "string" ? body.workspaceId : undefined;
+  if (
+    orgId &&
+    orgId !== existing.orgId &&
+    existing.orgId.startsWith("workspace:")
+  ) {
+    return Response.json(
+      {
+        error:
+          "Moving a device between workspaces requires a reviewed history migration",
+      },
+      { status: 409 },
+    );
+  }
   const targetOrg = orgId ?? existing.orgId;
   if (
     (orgId || visibility === "workspace") &&
