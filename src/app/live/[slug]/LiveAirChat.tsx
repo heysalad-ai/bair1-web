@@ -1,5 +1,6 @@
 "use client";
 
+import { useAuth0 } from "@auth0/auth0-react";
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport, type UIMessage } from "ai";
 import { Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
@@ -58,10 +59,12 @@ const prompts = [
 ];
 
 export default function LiveAirChat({ feedName, location, deviceIds, chartData, summary }: Props) {
+  const { isAuthenticated, getAccessTokenSilently, loginWithRedirect } = useAuth0();
   const [input, setInput] = useState("");
   const { messages, sendMessage, status } = useChat({
     transport: new DefaultChatTransport({
       api: "/api/chat",
+      headers: async () => ({ Authorization: `Bearer ${await getAccessTokenSilently()}` }),
       body: {
         feedContext: `${feedName} at ${location}. Feed device IDs: ${deviceIds.join(", ")}.`,
       },
@@ -72,13 +75,13 @@ export default function LiveAirChat({ feedName, location, deviceIds, chartData, 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
     const text = input.trim();
-    if (!text || isLoading) return;
+    if (!isAuthenticated || !text || isLoading) return;
     setInput("");
     await sendMessage({ text });
   };
 
   const ask = async (text: string) => {
-    if (isLoading) return;
+    if (!isAuthenticated || isLoading) return;
     await sendMessage({ text });
   };
 
@@ -152,13 +155,14 @@ export default function LiveAirChat({ feedName, location, deviceIds, chartData, 
         </aside>
 
         <div className="flex min-h-[440px] flex-col">
+          {!isAuthenticated && <div className="border-b border-border p-4 text-sm"><p>Sign in to ask Bair about this feed.</p><button type="button" onClick={() => loginWithRedirect()} className="mt-2 underline underline-offset-4">Sign in</button></div>}
           <div className="flex gap-2 overflow-x-auto border-b border-border p-3 sm:px-5">
             {prompts.map((prompt) => (
               <button
                 key={prompt}
                 type="button"
                 onClick={() => ask(prompt).catch(() => {})}
-                disabled={isLoading}
+                disabled={isLoading || !isAuthenticated}
                 className="shrink-0 border border-border bg-bg px-3 py-2 text-xs text-muted transition hover:border-primary hover:text-ink disabled:opacity-50"
               >
                 {prompt}
@@ -194,7 +198,7 @@ export default function LiveAirChat({ feedName, location, deviceIds, chartData, 
             />
             <button
               type="submit"
-              disabled={isLoading || !input.trim()}
+              disabled={isLoading || !isAuthenticated || !input.trim()}
               className="bg-primary px-4 py-2.5 text-sm font-medium text-white transition hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-50"
             >
               Ask

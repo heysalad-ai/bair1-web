@@ -1,5 +1,7 @@
 "use client";
 
+import { useAuth0 } from "@auth0/auth0-react";
+import { useAuthenticatedFetch } from "@/lib/use-authenticated-fetch";
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport, type UIMessage } from "ai";
 import { useState, useRef, useEffect } from "react";
@@ -11,6 +13,8 @@ interface Props {
 }
 
 export default function AIChatView({ deviceId, lat, lng }: Props) {
+  const { getAccessTokenSilently } = useAuth0();
+  const authenticatedFetch = useAuthenticatedFetch();
   const [isVoicePlaying, setIsVoicePlaying] = useState(false);
   const [briefingText, setBriefingText] = useState<string | null>(null);
   const [input, setInput] = useState("");
@@ -18,7 +22,7 @@ export default function AIChatView({ deviceId, lat, lng }: Props) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
   const { messages, sendMessage, status } = useChat({
-    transport: new DefaultChatTransport({ api: "/api/chat" }),
+    transport: new DefaultChatTransport({ api: "/api/chat", headers: async () => ({ Authorization: `Bearer ${await getAccessTokenSilently()}` }) }),
     messages: [
       {
         id: "system-intro",
@@ -56,7 +60,7 @@ export default function AIChatView({ deviceId, lat, lng }: Props) {
       if (lat != null) params.set("lat", String(lat));
       if (lng != null) params.set("lng", String(lng));
 
-      const res = await fetch(`/api/voice/briefing?${params}`);
+      const res = await authenticatedFetch(`/api/voice/briefing?${params}`);
       const data = await res.json();
       setBriefingText(data.text);
 
