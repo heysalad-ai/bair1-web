@@ -1,11 +1,10 @@
 import { usageGate } from "@/lib/usage-budget";
 import { validCoordinates } from "@/lib/request-limits";
 import { requireAuth } from "@/lib/auth";
-import { accessibleDevice } from "@/lib/device-access";
+import { withDeviceRead, accessibleDevice } from "@/lib/device-access";
 import { NextRequest, NextResponse } from "next/server";
 import { getLatestReading } from "@/lib/dynamo";
 import { getAirQuality, getWeather, getPollenForecast } from "@/lib/google-env";
-import { getAqiState } from "@/lib/aqi";
 
 const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY || "";
 const VOICE_ID = "21m00Tcm4TlvDq8ikWAM"; // Rachel
@@ -14,46 +13,77 @@ export async function GET(req: NextRequest) {
   const auth = await requireAuth(req);
   if (auth instanceof Response) return auth;
   const deviceId = req.nextUrl.searchParams.get("deviceId");
-  const lat = parseFloat(req.nextUrl.searchParams.get("lat") ?? "51.4775");
-  const lng = parseFloat(req.nextUrl.searchParams.get("lng") ?? "0.0656");
+  const rawLat = req.nextUrl.searchParams.get("lat"),
+    rawLng = req.nextUrl.searchParams.get("lng");
+  const hasLocation = rawLat !== null || rawLng !== null;
+  const lat = Number.parseFloat(rawLat ?? ""),
+    lng = Number.parseFloat(rawLng ?? "");
 
-  if (deviceId && !await accessibleDevice({ kind: "user", user: auth.user }, deviceId)) {
+  if (
+    deviceId &&
+    !(await accessibleDevice({ kind: "user", user: auth.user }, deviceId))
+  ) {
     return NextResponse.json({ error: "device not found" }, { status: 404 });
   }
 
-  if (!validCoordinates(lat, lng)) return NextResponse.json({ error: "Valid coordinates required" }, { status: 400 });
-  const limited = await usageGate("voice", auth.user.userId); if (limited) return limited;
-  // Gather data
-  const [sensorReading, googleAq, weather, pollen] = await Promise.all([
-    deviceId ? getLatestReading(deviceId) : null,
-    getAirQuality({ lat, lng }),
-    getWeather({ lat, lng }),
-    getPollenForecast({ lat, lng }, 1),
+  if (hasLocation && !validCoordinates(lat, lng))
+    return NextResponse.json(
+      { error: "Valid coordinates required" },
+      { status: 400 },
+    );
+  const limited = await usageGate("voice", auth.user.userId);
+  if (limited) return limited;
+  let sensorReading;
+  try {
+    sensorReading = deviceId
+      ? await withDeviceRead({ kind: "user", user: auth.user }, deviceId, () =>
+          getLatestReading(deviceId),
+        )
+      : null;
+  } catch {
+    return NextResponse.json({ error: "device not found" }, { status: 404 });
+  }
+  // Gather external context only after the authorized measurement is available.
+  const [googleAq, weather, pollen] = await Promise.all([
+    hasLocation ? getAirQuality({ lat, lng }) : Promise.resolve(null),
+    hasLocation ? getWeather({ lat, lng }) : Promise.resolve(null),
+    hasLocation ? getPollenForecast({ lat, lng }, 1) : Promise.resolve([]),
   ]);
 
   // Build briefing text
   const parts: string[] = [];
   const hour = new Date().getHours();
-  const greeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
+  const greeting =
+    hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
   parts.push(`${greeting}. Here's your air quality briefing.`);
 
   if (sensorReading?.aqi != null) {
-    const state = getAqiState(sensorReading.aqi);
     parts.push(
-      `Your sensor is reading an AQI of ${sensorReading.aqi}, which is ${state.level}. ${state.guidance[0]}.`
+      `Your device last reported an AQI of ${sensorReading.aqi}. Its calibration is unverified.`,
     );
   }
+  if (sensorReading?.temperature != null)
+    parts.push(
+      `The last recorded device temperature was ${sensorReading.temperature} degrees Celsius.`,
+    );
+  if (sensorReading?.capturedAt)
+    parts.push(`Device capture time: ${sensorReading.capturedAt}.`);
+  else if (sensorReading) parts.push("Device capture time is unknown.");
+  if (!hasLocation)
+    parts.push(
+      "Environmental context is unavailable because no location was provided.",
+    );
 
   const googleAqi = googleAq?.indexes?.[0];
   if (googleAqi) {
     parts.push(
-      `The Google Air Quality index for your area is ${googleAqi.aqi}, rated ${googleAqi.category}.`
+      `The Google Air Quality index for the provided location is ${googleAqi.aqi}, rated ${googleAqi.category}.`,
     );
   }
 
   if (weather?.temperature) {
     parts.push(
-      `Current temperature is ${Math.round(weather.temperature.degrees)} degrees${weather.humidity ? `, with ${weather.humidity.percent}% humidity` : ""}.`
+      `Current temperature is ${Math.round(weather.temperature.degrees)} degrees${weather.humidity ? `, with ${weather.humidity.percent}% humidity` : ""}.`,
     );
   }
 
@@ -61,7 +91,9 @@ export async function GET(req: NextRequest) {
   if (todayPollen?.length) {
     const active = todayPollen.filter((p) => p.inSeason);
     if (active.length > 0) {
-      const levels = active.map((p) => `${p.displayName}: ${p.indexInfo?.category}`).join(", ");
+      const levels = active
+        .map((p) => `${p.displayName}: ${p.indexInfo?.category}`)
+        .join(", ");
       parts.push(`Pollen levels today: ${levels}.`);
     }
   }
@@ -94,7 +126,7 @@ export async function GET(req: NextRequest) {
             similarity_boost: 0.75,
           },
         }),
-      }
+      },
     );
 
     if (!ttsRes.ok) {
