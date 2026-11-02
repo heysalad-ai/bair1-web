@@ -8,10 +8,10 @@ import {
   getNotecardTelemetry,
   getNotecardTelemetryHistory,
 } from "@/lib/dynamo";
-import { getAllDevicesRegistry, getDevice, type Device } from "@/lib/devices";
+import { getDevice, type Device } from "@/lib/devices";
 import { extractApiKeyFromHeaders, validateApiKey, type ApiKeyPrincipal } from "@/lib/api-keys";
 import { requireAuth } from "@/lib/auth";
-import { canAccessDevice, hasPlatformAccess } from "@/lib/device-access";
+import { canAccessDevice, accessibleDevices, hasPlatformAccess } from "@/lib/device-access";
 import type { User } from "@/lib/users";
 
 type Actor =
@@ -25,7 +25,7 @@ const hasFullAccess = hasPlatformAccess;
 async function requireDeviceAccess(actor: Actor, deviceId: string) {
   if (hasFullAccess(actor)) return;
   const device = await getDevice(deviceId);
-  if (!device || !canAccessDevice(actor, device)) {
+  if (!device || !await canAccessDevice(actor, device)) {
     throw new GraphQLError("device not found");
   }
 }
@@ -166,14 +166,11 @@ const schema = createSchema<GraphqlContext>({
       },
       activeDeviceIds: async (_parent, _args, context) => {
         if (hasFullAccess(context.actor)) return getAllDevices();
-        const devices = await getAllDevicesRegistry();
-        return devices.filter((device) => canAccessDevice(context.actor, device)).map((device) => device.deviceId);
+        const devices = await accessibleDevices(context.actor);
+        return devices.map((device) => device.deviceId);
       },
       registeredDevices: async (_parent, _args, context) => {
-        const devices = await getAllDevicesRegistry();
-        return hasFullAccess(context.actor)
-          ? devices
-          : devices.filter((device) => canAccessDevice(context.actor, device));
+        return accessibleDevices(context.actor);
       },
       timeSeries: async (_parent, args, context) => {
         await requireDeviceAccess(context.actor, args.deviceId);

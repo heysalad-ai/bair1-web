@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { extractApiKeyFromHeaders, validateApiKey } from "@/lib/api-keys";
-import { getDevice, getDevicesForUser } from "@/lib/devices";
+import { accessibleDevice, accessibleDevices } from "@/lib/device-access";
 import { getReadings, getReadingsInRange, Reading } from "@/lib/dynamo";
-import { getAllDevices } from "@/lib/dynamo";
 
 export const dynamic = "force-dynamic";
 
@@ -79,17 +78,15 @@ export async function GET(req: NextRequest) {
     // Determine which devices to export
     let deviceIds: string[];
     if (deviceParam) {
-      if (principal.type === "developer") {
-        const device = await getDevice(deviceParam);
-        if (!device || device.ownerId !== principal.userId) {
+      {
+        const device = await accessibleDevice({ kind: "api-key", principal }, deviceParam);
+        if (!device) {
           return NextResponse.json({ error: "device not found" }, { status: 404 });
         }
       }
       deviceIds = [deviceParam];
     } else {
-      deviceIds = principal.type === "system"
-        ? await getAllDevices()
-        : (await getDevicesForUser(principal.userId)).map((device) => device.deviceId);
+      deviceIds = (await accessibleDevices({ kind: "api-key", principal })).map(device => device.deviceId);
     }
 
     // Gather readings

@@ -32,6 +32,7 @@ test('PM-only uploads preserve PM and leave AQI unavailable; explicit zero stays
     '@/lib/api-keys': { extractApiKeyFromHeaders: () => null, validateApiKey: async () => ({ type: 'system' }) },
     '@/lib/dynamo': { storeReading: async (value) => { stored = value; return {outcome:'stored',timestamp:new Date().toISOString(),capturedAt:null,receivedAt:new Date().toISOString(),clockQuality:'unknown'}; } },
     '@/lib/geolocation': {},
+    '@/lib/device-access': {},
     '@/lib/devices': { getDevice: async () => ({}), updateDevice: async () => {} },
   });
   for (const aqi of [undefined, null, 0, 57]) {
@@ -65,6 +66,7 @@ test('Dynamo omits missing AQI and round-trips it as null, not zero', async () =
   class Command { constructor(input) { this.input = input; } }
   class PutItemCommand extends Command {}
   const db = load('src/lib/dynamo.ts', {
+    './devices': { getDevice: async () => null, getAllDevicesRegistry: async () => [] },
     '@aws-sdk/client-dynamodb': { PutItemCommand, QueryCommand: Command, ScanCommand: Command },
     './reading-ingestion': { persistReading: async (value) => {item={...value,timestamp:{S:new Date().toISOString()}}; return {outcome:'stored'};} },
     './aws-dynamo': { dynamoClient: { send: async (command) => {

@@ -1,3 +1,5 @@
+import { getDevice } from "./devices";
+import { publicReading } from "./public-reading";
 import { getReadings, getReadingsInRange, type Reading } from "./dynamo";
 
 export type PublicFeedDevice = {
@@ -206,7 +208,7 @@ export const PUBLIC_FEEDS: Record<string, PublicFeed> = {
 };
 
 function withDevice(reading: Reading, device: PublicFeedDevice): Reading & PublicFeedDevice {
-  return { ...reading, ...device };
+  return { ...publicReading(reading), ...device };
 }
 
 function asArray<T>(value: T | T[] | undefined): T[] {
@@ -382,7 +384,9 @@ export async function getPublicFeedSnapshot(
           includeReferences: options.includeReferences ?? true,
         };
 
-  const selectedDevices = feed.devices.filter((device) => filters.devices.includes(device.deviceId));
+  const candidates = feed.devices.filter((device) => filters.devices.includes(device.deviceId));
+  const published = await Promise.all(candidates.map(async device => (await getDevice(device.deviceId))?.visibility === "public"));
+  const selectedDevices = candidates.filter((_, index) => published[index]);
 
   const perDevice = await Promise.all(
     selectedDevices.map(async (device) => {
@@ -419,6 +423,7 @@ export async function getPublicFeedSnapshot(
 
   return {
     ...feed,
+    devices: selectedDevices,
     referenceLocation: filters.includeReferences ? feed.referenceLocation : { label: "", lat: 0, lng: 0 },
     references: filters.includeReferences ? feed.references : [],
     latest,
@@ -426,6 +431,6 @@ export async function getPublicFeedSnapshot(
     referenceReadings,
     referenceStations,
     updatedAt: latest[0]?.timestamp ?? new Date().toISOString(),
-    filters,
+    filters: { ...filters, devices: selectedDevices.map(device => device.deviceId) },
   };
 }

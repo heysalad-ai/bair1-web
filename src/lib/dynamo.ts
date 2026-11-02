@@ -1,3 +1,4 @@
+import { getDevice, getAllDevicesRegistry } from "./devices";
 import { storageTable } from "./storage-config";
 import {
   PutItemCommand,
@@ -113,7 +114,7 @@ function rawNumber(raw: Record<string, unknown>, key: string): number | null {
 function parseItem(item: Record<string, AttributeValue>): Reading {
   const raw = parseRawPayload(item);
   return {
-    deviceId: text(item, "deviceId") ?? "unknown",
+    deviceId: text(item, "physicalDeviceId") ?? text(item, "deviceId") ?? "unknown",
     timestamp: text(item, "readingAt") ?? text(item, "timestamp") ?? "",
     capturedAt: text(item, "capturedAt"),
     receivedAt: text(item, "receivedAt"),
@@ -191,10 +192,11 @@ async function scanAll(input: ScanCommandInput) {
 }
 
 export async function getReadings(deviceId: string, limit = 100): Promise<Reading[]> {
+  const version = (await getDevice(deviceId))?.ownershipVersion;
   const items = await queryAll({
     TableName: TABLE,
     KeyConditionExpression: "deviceId = :deviceId",
-    ExpressionAttributeValues: { ":deviceId": { S: deviceId } },
+    ExpressionAttributeValues: { ":deviceId": { S: version && version !== "legacy" ? `${deviceId}#${version}` : deviceId } },
     ScanIndexForward: false,
     Limit: Math.min(Math.max(limit, 1), 10_000),
   }, limit);
@@ -207,11 +209,7 @@ export async function getLatestReading(deviceId: string): Promise<Reading | null
 }
 
 export async function getAllDevices(): Promise<string[]> {
-  const items = await scanAll({
-    TableName: TABLE,
-    ProjectionExpression: "deviceId",
-  });
-  return [...new Set(items.map((item) => text(item, "deviceId")).filter((id): id is string => Boolean(id)))];
+  return (await getAllDevicesRegistry()).filter(device => device.status === "active").map(device => device.deviceId);
 }
 
 export async function getLatestReadings(limit = 20): Promise<Reading[]> {
@@ -223,12 +221,13 @@ export async function getLatestReadings(limit = 20): Promise<Reading[]> {
 }
 
 export async function getReadingsInRange(deviceId: string, from: string, to: string): Promise<Reading[]> {
+  const version = (await getDevice(deviceId))?.ownershipVersion;
   const items = await queryAll({
     TableName: TABLE,
     KeyConditionExpression: "deviceId = :deviceId AND #timestamp BETWEEN :from AND :to",
     ExpressionAttributeNames: { "#timestamp": "timestamp" },
     ExpressionAttributeValues: {
-      ":deviceId": { S: deviceId },
+      ":deviceId": { S: version && version !== "legacy" ? `${deviceId}#${version}` : deviceId },
       ":from": { S: new Date(from).toISOString() },
       ":to": { S: new Date(to).toISOString() + "~" },
     },
@@ -239,7 +238,8 @@ export async function getReadingsInRange(deviceId: string, from: string, to: str
 
 export async function storeReading(input: ReadingInput): Promise<IngestionResult> {
   const item: Record<string, AttributeValue> = {
-    deviceId: { S: input.deviceId },
+    deviceId: { S: input.ownershipVersion && input.ownershipVersion !== "legacy" ? `${input.deviceId}#${input.ownershipVersion}` : input.deviceId },
+    physicalDeviceId: { S: input.deviceId },
     rawPayload: { S: JSON.stringify(input.rawPayload) },
   };
   const optionalNumbers = {
@@ -320,6 +320,11 @@ function randomId(prefix: string): string {
   return `${prefix}_${Math.random().toString(36).slice(2, 10)}${Date.now().toString(36).slice(-4)}`;
 }
 
+async function ownershipKey(deviceId: string, key: string) {
+  const version = (await getDevice(deviceId))?.ownershipVersion;
+  return version && version !== "legacy" ? `${key}#${version}` : key;
+}
+
 export async function enqueueCommand(
   deviceId: string,
   type: CommandType,
@@ -327,7 +332,8 @@ export async function enqueueCommand(
 ): Promise<Command> {
   const now = Date.now();
   const createdAt = new Date(now).toISOString();
-  const commandId = `${now.toString(36)}-${randomId("cmd")}`;
+  const prefix = await ownershipKey(deviceId, "command");
+  const commandId = `${prefix}#${now.toString(36)}-${randomId("cmd")}`;
   const expiresAt = Math.floor(now / 1000) + COMMAND_TTL_SECONDS;
   const item: Record<string, AttributeValue> = {
     deviceId: { S: deviceId },
@@ -353,17 +359,21 @@ export async function enqueueCommand(
 }
 
 export async function pollCommands(deviceId: string, limit = 10): Promise<Command[]> {
+  const prefix = await ownershipKey(deviceId, "command");
+  const versioned = prefix !== "command";
   const items = await queryAll({
     TableName: COMMANDS_TABLE,
-    KeyConditionExpression: "deviceId = :deviceId",
-    ExpressionAttributeValues: { ":deviceId": { S: deviceId } },
+    KeyConditionExpression: versioned ? "deviceId = :deviceId AND begins_with(commandId, :prefix)" : "deviceId = :deviceId",
+    ExpressionAttributeValues: { ":deviceId": { S: deviceId }, ":pending": { S: "pending" }, ":now": { N: String(Math.floor(Date.now() / 1000)) }, ...(versioned ? { ":prefix": { S: prefix + "#" } } : {}) },
+    FilterExpression: "#status = :pending AND expiresAt > :now",
+    ExpressionAttributeNames: { "#status": "status" },
     ScanIndexForward: true,
     Limit: Math.min(Math.max(limit, 1), 50),
   }, limit);
 
   return items
     .map(parseCommandItem)
-    .filter((cmd): cmd is Command => cmd !== null);
+    .filter((cmd): cmd is Command => cmd !== null && cmd.status === "pending" && cmd.expiresAt > Date.now() / 1000);
 }
 
 export async function ackCommand(
@@ -385,12 +395,15 @@ export async function ackCommand(
       commandId: { S: commandId },
     },
     UpdateExpression: updateExpression,
+    ConditionExpression: "attribute_exists(commandId)",
     ExpressionAttributeNames: names,
     ExpressionAttributeValues: values,
   }));
 }
 
 export async function getCommand(deviceId: string, commandId: string): Promise<Command | null> {
+  const prefix = await ownershipKey(deviceId, "command");
+  if (prefix !== "command" && !commandId.startsWith(prefix + "#")) return null;
   const result = await dynamoClient.send(new QueryCommand({
     TableName: COMMANDS_TABLE,
     KeyConditionExpression: "deviceId = :deviceId AND commandId = :commandId",
@@ -456,7 +469,7 @@ export async function getDeviceState(deviceId: string): Promise<DeviceState> {
     KeyConditionExpression: "deviceId = :deviceId AND commandId = :sk",
     ExpressionAttributeValues: {
       ":deviceId": { S: deviceId },
-      ":sk": { S: STATE_SORT_KEY },
+      ":sk": { S: await ownershipKey(deviceId, STATE_SORT_KEY) },
     },
     Limit: 1,
   }));
@@ -483,7 +496,7 @@ export async function setDeviceState(
   const now = new Date().toISOString();
   const item: Record<string, AttributeValue> = {
     deviceId: { S: deviceId },
-    commandId: { S: STATE_SORT_KEY },
+    commandId: { S: await ownershipKey(deviceId, STATE_SORT_KEY) },
     ledOn: { BOOL: led.on },
     ledBrightness: { N: String(led.brightness) },
     updatedAt: { S: now },
@@ -553,7 +566,7 @@ export async function setNotecardTelemetry(
   }
   const latestKey = {
     deviceId: { S: telemetry.deviceId },
-    commandId: { S: NOTECARD_TELEMETRY_SORT_KEY },
+    commandId: { S: await ownershipKey(telemetry.deviceId, NOTECARD_TELEMETRY_SORT_KEY) },
   };
   try {
     await dynamoClient.send(new UpdateItemCommand({
@@ -606,7 +619,7 @@ export async function setNotecardTelemetry(
   const eventItem: Record<string, AttributeValue> = {
     deviceId: { S: telemetry.deviceId },
     commandId: {
-      S: `${NOTECARD_TELEMETRY_EVENT_PREFIX}${telemetry.capturedAt}#${telemetry.receivedAt}#${safeFile}`,
+      S: `${await ownershipKey(telemetry.deviceId, NOTECARD_TELEMETRY_EVENT_PREFIX)}#${telemetry.capturedAt}#${telemetry.receivedAt}#${safeFile}`,
     },
     capturedAt: { S: telemetry.capturedAt },
     receivedAt: { S: telemetry.receivedAt },
@@ -666,7 +679,7 @@ export async function getNotecardTelemetry(deviceId: string): Promise<NotecardTe
     KeyConditionExpression: "deviceId = :deviceId AND commandId = :sk",
     ExpressionAttributeValues: {
       ":deviceId": { S: deviceId },
-      ":sk": { S: NOTECARD_TELEMETRY_SORT_KEY },
+      ":sk": { S: await ownershipKey(deviceId, NOTECARD_TELEMETRY_SORT_KEY) },
     },
     Limit: 1,
   }));
@@ -684,7 +697,7 @@ export async function getNotecardTelemetryHistory(
     KeyConditionExpression: "deviceId = :deviceId AND begins_with(commandId, :prefix)",
     ExpressionAttributeValues: {
       ":deviceId": { S: deviceId },
-      ":prefix": { S: NOTECARD_TELEMETRY_EVENT_PREFIX },
+      ":prefix": { S: await ownershipKey(deviceId, NOTECARD_TELEMETRY_EVENT_PREFIX) },
     },
     ScanIndexForward: false,
     Limit: Math.min(Math.max(limit, 1), 500),

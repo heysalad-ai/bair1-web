@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getAllDevicesRegistry, getDevicesForUser } from "@/lib/devices";
+import { accessibleDevices } from "@/lib/device-access";
 import { getLatestReading } from "@/lib/dynamo";
 import { extractApiKeyFromHeaders, validateApiKey } from "@/lib/api-keys";
 
@@ -15,9 +15,7 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const devices = principal.type === "system"
-      ? await getAllDevicesRegistry()
-      : await getDevicesForUser(principal.userId);
+    const devices = await accessibleDevices({ kind: "api-key", principal });
 
     const devicesWithLatest = await Promise.all(
       devices.map(async (device) => {

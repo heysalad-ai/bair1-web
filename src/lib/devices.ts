@@ -24,6 +24,8 @@ export interface Device {
   orgId: string;
   status: DeviceStatus;
   createdAt: string;
+  visibility?: "private" | "workspace" | "public";
+  ownershipVersion?: string;
 }
 
 function text(item: Record<string, AttributeValue>, key: string) {
@@ -38,6 +40,8 @@ function number(item: Record<string, AttributeValue>, key: string) {
 function parseItem(item: Record<string, AttributeValue>): Device {
   return {
     deviceId: text(item, "deviceId"),
+    visibility: (["workspace", "public"].includes(text(item, "visibility")) ? text(item, "visibility") : "private") as Device["visibility"],
+    ownershipVersion: text(item, "ownershipVersion") || "legacy",
     name: text(item, "name"),
     location: text(item, "location"),
     lat: number(item, "lat"),
@@ -76,6 +80,8 @@ export async function getDevice(deviceId: string): Promise<Device | null> {
 export async function createDevice(device: Device, onlyIfAbsent = false): Promise<void> {
   const item: Record<string, AttributeValue> = {
     deviceId: { S: device.deviceId },
+    visibility: { S: device.visibility ?? "private" },
+    ownershipVersion: { S: device.ownershipVersion ?? "legacy" },
     name: { S: device.name },
     location: { S: device.location },
     ownerId: { S: device.ownerId },
@@ -99,12 +105,12 @@ export async function claimDeviceForReading(device: Device): Promise<Device> {
 
 export async function updateDevice(
   deviceId: string,
-  updates: Partial<Pick<Device, "name" | "location" | "lat" | "lng" | "status" | "ownerId">>,
+  updates: Partial<Pick<Device, "name" | "location" | "lat" | "lng" | "status" | "visibility" | "orgId">>,
 ): Promise<void> {
   const expressions: string[] = [];
   const names: Record<string, string> = {};
   const values: Record<string, AttributeValue> = {};
-  const textFields = ["name", "location", "status", "ownerId"] as const;
+  const textFields = ["name", "location", "status", "visibility", "orgId"] as const;
   for (const field of textFields) {
     const value = updates[field];
     if (value !== undefined) {

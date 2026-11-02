@@ -1,11 +1,10 @@
-import { ConditionalCheckFailedException } from "@aws-sdk/client-dynamodb";
+import { claimEnrollment } from "@/lib/device-enrollment";
+import { workspaceRole } from "@/lib/access-store";
 import { requireAuth } from "@/lib/auth";
 import {
-  createDevice,
   getDevice,
   getDevicesForUser,
   updateDevice,
-  type Device,
   type DeviceStatus,
 } from "@/lib/devices";
 
@@ -37,25 +36,13 @@ export async function POST(request: Request) {
     );
   }
 
-  const device: Device = {
-    deviceId,
-    name,
-    location: String(body.location ?? "").trim(),
-    lat: parseNullableNumber(body.lat),
-    lng: parseNullableNumber(body.lng),
-    ownerId: auth.user.userId,
-    orgId: auth.user.orgId,
-    status: "provisioning",
-    createdAt: new Date().toISOString(),
-  };
-
-  try {
-    await createDevice(device, true);
-  } catch (error) {
-    if (error instanceof ConditionalCheckFailedException) return Response.json({ error: "device already registered" }, { status: 409 });
-    throw error;
+  const existing = await getDevice(deviceId);
+  if (existing?.ownerId) return Response.json({ error: "device already registered" }, { status: 409 });
+  if (typeof body.enrollmentCode !== "string" || body.enrollmentCode.length < 20 || body.enrollmentCode.length > 100) {
+    return Response.json({ error: "one-time enrollment code required" }, { status: 400 });
   }
-  return Response.json({ ok: true, device });
+  const device = await claimEnrollment(deviceId, body.enrollmentCode, auth.user.userId, auth.user.orgId, name);
+  return device ? Response.json({ ok: true, device }) : Response.json({ error: "enrollment is invalid, expired or already used" }, { status: 409 });
 }
 
 export async function PATCH(request: Request) {
@@ -78,7 +65,14 @@ export async function PATCH(request: Request) {
     ? (body.status as DeviceStatus)
     : undefined;
 
+  const visibility = ["private", "workspace", "public"].includes(body.visibility) ? body.visibility : undefined;
+  const orgId = typeof body.workspaceId === "string" ? body.workspaceId : undefined;
+  const targetOrg = orgId ?? existing.orgId;
+  if ((orgId || visibility === "workspace") && !await workspaceRole(auth.user.userId, targetOrg)) {
+    return Response.json({ error: "workspace membership required" }, { status: 403 });
+  }
   await updateDevice(deviceId, {
+    visibility, orgId,
     name: body.name != null ? String(body.name).trim() : undefined,
     location: body.location != null ? String(body.location).trim() : undefined,
     lat: body.lat !== undefined ? parseNullableNumber(body.lat) : undefined,

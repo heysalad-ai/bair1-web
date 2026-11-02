@@ -1,3 +1,4 @@
+import { getDevice } from "@/lib/devices";
 import { requireAuth } from "@/lib/auth";
 import {
   createApiKey,
@@ -39,11 +40,18 @@ export async function POST(request: Request) {
     return Response.json({ error: "name required" }, { status: 400 });
   }
 
+  const scopes = normalizeScopes(body.scopes);
+  if (scopes && !scopes.length) return Response.json({ error: "select at least one scope" }, { status: 400 });
+  const deviceId = typeof body.deviceId === "string" ? body.deviceId : undefined;
+  if (deviceId) {
+    const device = await getDevice(deviceId);
+    if (!device || device.ownerId !== auth.user.userId) return Response.json({ error: "device not found" }, { status: 404 });
+  }
   const result = await createApiKey({
     name,
     userId: auth.user.userId,
     orgId: auth.user.orgId,
-    scopes: normalizeScopes(body.scopes),
+    scopes, deviceId,
   });
 
   return Response.json({

@@ -7,6 +7,7 @@ import SharedDeviceView from "./shared-device-view";
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
+  robots: { index: false, follow: false },
   title: "Shared device telemetry | Bair1",
   description: "Privacy-safe live environmental and air-quality telemetry from Bair1.",
   openGraph: {
@@ -30,8 +31,8 @@ export default async function SharedDevicePage({
   searchParams: Promise<{ token?: string }>;
 }) {
   const [{ deviceId }, { token }] = await Promise.all([params, searchParams]);
-  if (!verifyDeviceShareToken(deviceId, token)) notFound();
+  if (!await verifyDeviceShareToken(deviceId, token)) notFound();
   const snapshot = await getSharedDeviceSnapshot(deviceId);
-  if (!snapshot) notFound();
+  if (!snapshot || !await verifyDeviceShareToken(deviceId, token)) notFound();
   return <SharedDeviceView deviceId={deviceId} token={token!} initialSnapshot={snapshot} />;
 }

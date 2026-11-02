@@ -1,8 +1,9 @@
+import { accessibleDevices } from "@/lib/device-access";
 import { ingestionPaused } from "@/lib/storage-config";
 import { validateReadingBody, InvalidReadingError } from "@/lib/reading-ingestion";
 import { NextRequest, NextResponse } from "next/server";
 import { extractApiKeyFromHeaders, validateApiKey } from "@/lib/api-keys";
-import { getLatestReadings, storeReading } from "@/lib/dynamo";
+import { getLatestReading, storeReading } from "@/lib/dynamo";
 import { resolveCellTower, resolveWifiAccessPoints, type WifiAccessPoint } from "@/lib/geolocation";
 import { getDevice, claimDeviceForReading, updateDevice } from "@/lib/devices";
 
@@ -48,7 +49,31 @@ export async function POST(req: NextRequest) {
   const sample = body.sample != null ? Number(body.sample) : null;
   const transport = body.transport ? String(body.transport) : null;
 
+  const identityPayload = structuredClone(body);
   try {
+    let existing = await getDevice(deviceId);
+    if (!existing && principal.type === "developer") {
+      return NextResponse.json({ error: "enroll this device before uploading" }, { status: 404 });
+    }
+    if (!existing) {
+      const family = body.family ? String(body.family) : "";
+      existing = await claimDeviceForReading({
+        deviceId,
+        name: String(body.deviceName ?? body.name ?? (family ? `${family} sensor` : deviceId)),
+        location: "",
+        lat: body.lat != null ? Number(body.lat) : null,
+        lng: body.lng != null ? Number(body.lng) : null,
+        ownerId: principal.type === "developer" ? principal.userId : "",
+        orgId: principal.orgId,
+        status: "active",
+        createdAt: new Date().toISOString(),
+      });
+    }
+    if (principal.type === "developer" && (existing.ownerId !== principal.userId || (principal.deviceId && principal.deviceId !== deviceId))) {
+      return NextResponse.json({ error: "device not found" }, { status: 404 });
+    }
+
+
     // Resolve cell tower to lat/lng if present and no lat/lng already
     const ct = body.cellTower as Record<string, unknown> | undefined;
     if (ct && body.lat == null && body.lng == null) {
@@ -80,24 +105,6 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    let existing = await getDevice(deviceId);
-    if (!existing) {
-      const family = body.family ? String(body.family) : "";
-      existing = await claimDeviceForReading({
-        deviceId,
-        name: String(body.deviceName ?? body.name ?? (family ? `${family} sensor` : deviceId)),
-        location: "",
-        lat: body.lat != null ? Number(body.lat) : null,
-        lng: body.lng != null ? Number(body.lng) : null,
-        ownerId: principal.type === "developer" ? principal.userId : "",
-        orgId: principal.orgId,
-        status: "active",
-        createdAt: new Date().toISOString(),
-      });
-    }
-    if (principal.type === "developer" && existing.ownerId !== principal.userId) {
-      return NextResponse.json({ error: "device not found" }, { status: 404 });
-    }
 
     const stored = await storeReading({
       deviceId,
@@ -111,6 +118,9 @@ export async function POST(req: NextRequest) {
       sample,
       transport,
       rawPayload: body,
+      identityPayload,
+      tenantId: existing.orgId,
+      ownershipVersion: existing.ownershipVersion,
       authorizedOwnerId: principal.type === "developer" ? principal.userId : undefined,
       capturedAt: (body.capturedAt ?? body.measuredAt ?? body.epochSeconds ?? body.when ?? null) as string | number | null,
       eventId: body.eventId as string | undefined,
@@ -153,15 +163,10 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
   try {
-    const readings = await getLatestReadings(20);
-    if (principal.type === "system") {
-      return NextResponse.json({ readings });
-    }
-    const allowed = await Promise.all(readings.map(async (reading) => {
-      const device = await getDevice(reading.deviceId);
-      return device?.ownerId === principal.userId ? reading : null;
-    }));
-    return NextResponse.json({ readings: allowed.filter(Boolean) });
+    const devices = await accessibleDevices({ kind: "api-key", principal });
+    const readings = (await Promise.all(devices.map(device => getLatestReading(device.deviceId)))).filter(reading => reading !== null);
+    readings.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+    return NextResponse.json({ readings: readings.slice(0, 20) });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "unknown error";
     return NextResponse.json({ error: message }, { status: 500 });

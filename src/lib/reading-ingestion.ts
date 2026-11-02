@@ -22,6 +22,9 @@ export type IngestionIdentity = {
   sequence?: string | number | null;
   capturedAtSource?: "device" | "gateway";
   authorizedOwnerId?: string;
+  identityPayload?: Record<string, unknown>;
+  tenantId?: string;
+  ownershipVersion?: string;
 };
 export class InvalidReadingError extends Error {}
 
@@ -78,13 +81,13 @@ export async function persistReading(
   const capturedAt = captureTime(identity.capturedAt, now);
   const clockQuality = capturedAt ? identity.capturedAtSource ?? "device" : "unknown";
   // Operational counters/signal strength may change between attempts. First accepted values win.
-  const immutable = { ...rawPayload };
-  for (const key of ["rssi", "droppedSamples", "capturedAt", "measuredAt", "epochSeconds", "when"]) delete immutable[key];
+  const immutable = { ...(identity.identityPayload ?? rawPayload) };
+  for (const key of ["rssi", "droppedSamples", "capturedAt", "measuredAt", "epochSeconds", "when", "wifiAccessPoints", "cellTower"]) delete immutable[key];
   const fingerprint = hash({ payload: immutable, capturedAt });
   const producerIdentity = identity.eventId ? ["event", identity.eventId]
     : identity.bootSession && identity.sequence != null ? ["boot", identity.bootSession, String(identity.sequence)]
     : capturedAt ? ["content", capturedAt, fingerprint] : ["legacy", randomUUID()];
-  const eventId = hash(producerIdentity);
+  const eventId = hash(identity.ownershipVersion && identity.ownershipVersion !== "legacy" ? [identity.ownershipVersion, producerIdentity] : producerIdentity);
   const timestamp = capturedAt ?? receivedAt;
   const result: IngestionResult = { outcome: "stored", timestamp, capturedAt, receivedAt, clockQuality };
   // A suffix allows distinct readings at the same instant. APIs expose readingAt, never this key.
@@ -92,16 +95,21 @@ export async function persistReading(
   const expiresAt = Math.floor(now / 1000) + READING_RETENTION_SECONDS;
   const receipt: Record<string, AttributeValue> = {
     deviceId: item.deviceId, eventId: { S: eventId }, fingerprint: { S: fingerprint },
+    ...(identity.tenantId ? { tenantId: { S: identity.tenantId } } : {}),
+    ...(identity.ownershipVersion ? { ownershipVersion: { S: identity.ownershipVersion } } : {}),
     readingKey: { S: readingKey }, result: { S: JSON.stringify(result) }, expiresAt: { N: String(expiresAt) },
   };
-  const reading = { ...item, timestamp: { S: readingKey }, readingAt: { S: timestamp },
+  const reading = { ...item,
+    ...(identity.tenantId ? { tenantId: { S: identity.tenantId } } : {}),
+    ...(identity.ownershipVersion ? { ownershipVersion: { S: identity.ownershipVersion } } : {}),
+    timestamp: { S: readingKey }, readingAt: { S: timestamp },
     receivedAt: { S: receivedAt }, clockQuality: { S: clockQuality },
     ...(capturedAt ? { capturedAt: { S: capturedAt } } : {}), expiresAt: { N: String(expiresAt) } };
   for (let attempt = 0; attempt < 4; attempt++) {
     try {
       await dynamoClient.send(new TransactWriteItemsCommand({ TransactItems: [
         ...(identity.authorizedOwnerId ? [{ ConditionCheck: {
-          TableName: storageTable("bair1-devices"), Key: { deviceId: item.deviceId },
+          TableName: storageTable("bair1-devices"), Key: { deviceId: item.physicalDeviceId ?? item.deviceId },
           ConditionExpression: "ownerId = :owner", ExpressionAttributeValues: { ":owner": { S: identity.authorizedOwnerId } },
         } }] : []),
         { Put: { TableName: storageTable("bair1-readings"), Item: reading,

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { extractApiKeyFromHeaders, validateApiKey } from "@/lib/api-keys";
 import { getDeviceState, getLatestReading, getNotecardTelemetry } from "@/lib/dynamo";
-import { getDevice } from "@/lib/devices";
+import { accessibleDevice } from "@/lib/device-access";
 
 export const dynamic = "force-dynamic";
 
@@ -21,9 +21,9 @@ export async function GET(
   if (!deviceId) {
     return NextResponse.json({ error: "deviceId is required" }, { status: 400 });
   }
-  if (principal.type === "developer") {
-    const device = await getDevice(deviceId);
-    if (!device || device.ownerId !== principal.userId) {
+  {
+    const device = await accessibleDevice({ kind: "api-key", principal }, deviceId);
+    if (!device) {
       return NextResponse.json({ error: "device not found" }, { status: 404 });
     }
   }

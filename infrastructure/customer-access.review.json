@@ -1,0 +1,91 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "Review only: isolated Bair1 workspace membership and revocable shares. No resources are applied by the app.",
+  "Parameters": {
+    "TablePrefix": {
+      "Type": "String",
+      "Default": "bair1-",
+      "AllowedPattern": "^bair1-(staging-[a-z0-9-]+-)?$"
+    }
+  },
+  "Resources": {
+    "CustomerAccess": {
+      "Type": "AWS::DynamoDB::Table",
+      "DeletionPolicy": "Retain",
+      "UpdateReplacePolicy": "Retain",
+      "Properties": {
+        "TableName": {
+          "Fn::Sub": "${TablePrefix}access"
+        },
+        "BillingMode": "PAY_PER_REQUEST",
+        "DeletionProtectionEnabled": true,
+        "SSESpecification": {
+          "SSEEnabled": true
+        },
+        "PointInTimeRecoverySpecification": {
+          "PointInTimeRecoveryEnabled": true
+        },
+        "TimeToLiveSpecification": {
+          "AttributeName": "expiresAt",
+          "Enabled": true
+        },
+        "AttributeDefinitions": [
+          {
+            "AttributeName": "scope",
+            "AttributeType": "S"
+          },
+          {
+            "AttributeName": "entry",
+            "AttributeType": "S"
+          },
+          {
+            "AttributeName": "userId",
+            "AttributeType": "S"
+          },
+          {
+            "AttributeName": "workspaceId",
+            "AttributeType": "S"
+          }
+        ],
+        "KeySchema": [
+          {
+            "AttributeName": "scope",
+            "KeyType": "HASH"
+          },
+          {
+            "AttributeName": "entry",
+            "KeyType": "RANGE"
+          }
+        ],
+        "GlobalSecondaryIndexes": [
+          {
+            "IndexName": "userId-workspaceId-index",
+            "KeySchema": [
+              {
+                "AttributeName": "userId",
+                "KeyType": "HASH"
+              },
+              {
+                "AttributeName": "workspaceId",
+                "KeyType": "RANGE"
+              }
+            ],
+            "Projection": {
+              "ProjectionType": "ALL"
+            }
+          }
+        ]
+      }
+    }
+  },
+  "Outputs": {
+    "AccessTableArn": {
+      "Value": {
+        "Fn::GetAtt": [
+          "CustomerAccess",
+          "Arn"
+        ]
+      }
+    }
+  }
+}

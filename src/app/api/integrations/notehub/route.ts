@@ -45,7 +45,7 @@ export async function POST(req: NextRequest) {
         orgId: process.env.NOTEHUB_ORG_ID ?? "default",
         status: "active",
         createdAt: new Date().toISOString(),
-      });
+      }, true);
     } else {
       await updateDevice(normalized.publicDeviceId, {
         status: "active",
@@ -81,6 +81,8 @@ export async function POST(req: NextRequest) {
     const storedReading = hasAirReading
       ? await storeReading({
           deviceId: normalized.publicDeviceId,
+          tenantId: existing?.orgId ?? process.env.NOTEHUB_ORG_ID ?? "default",
+          ownershipVersion: existing?.ownershipVersion ?? "legacy",
           timestamp: normalized.capturedAt,
           aqi: normalized.aqi,
           gasRaw: null,

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getDevice } from "@/lib/devices";
+import { accessibleDevice } from "@/lib/device-access";
 import { getLatestReading } from "@/lib/dynamo";
 import { extractApiKeyFromHeaders, validateApiKey } from "@/lib/api-keys";
 
@@ -24,11 +24,11 @@ export async function GET(
       return NextResponse.json({ error: "deviceId is required" }, { status: 400 });
     }
 
-    const device = await getDevice(deviceId);
+    const device = await accessibleDevice({ kind: "api-key", principal }, deviceId);
     if (!device) {
       return NextResponse.json({ error: "device not found" }, { status: 404 });
     }
-    if (principal.type === "developer" && device.ownerId !== principal.userId) {
+    if (!device) {
       return NextResponse.json({ error: "device not found" }, { status: 404 });
     }
 

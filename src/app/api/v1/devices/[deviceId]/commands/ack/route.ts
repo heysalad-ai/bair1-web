@@ -30,6 +30,7 @@ export async function POST(
   }
 
   const existing = await getCommand(deviceId, commandId);
+  if (!existing) return NextResponse.json({ error: "command not found" }, { status: 404 });
   await ackCommand(deviceId, commandId, Boolean(ok), result ?? null);
 
   if (existing?.type === "set_led" && existing.payload) {

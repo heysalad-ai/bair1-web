@@ -24,6 +24,7 @@ function reading(id) {
 const devices = {
   getDevice: async id => rows.get(id) ?? null,
   getAllDevicesRegistry: async () => [...rows.values()],
+  getDevicesForOrg: async org => [...rows.values()].filter(d => d.orgId === org),
   getDevicesForUser: async id => [...rows.values()].filter(d => d.ownerId === id),
 };
 const dynamo = {
@@ -92,6 +93,10 @@ await probe('GraphQL rejects a non-owner in a different organisation', 'control-
 await probe('Device registration cannot overwrite another owner or expose their history', 'isolation-gap', async () => {
   const fakeClient = { send: async command => {
     const input = command.input;
+    if (command instanceof sdk.GetItemCommand) {
+      const row = rows.get(input.Key.deviceId.S);
+      return { Item: row ? Object.fromEntries(Object.entries(row).map(([k, v]) => [k, { S: String(v) }])) : undefined };
+    }
     if (command instanceof sdk.PutItemCommand) {
       const id = input.Item.deviceId.S;
       if (input.ConditionExpression && rows.has(id)) throw new sdk.ConditionalCheckFailedException({ $metadata: {}, message: 'exists' });
@@ -173,11 +178,12 @@ await probe('Owner GraphQL reads still work and a customer admin has no platform
   const res = await route.POST(request('POST', { query: `{ readings(deviceId: "${deviceA.deviceId}") { deviceId } }` }));
   assert.equal((await res.json()).data.readings[0].deviceId, deviceA.deviceId);
   const access = load('src/lib/device-access.ts');
-  assert.equal(access.canAccessDevice({ kind: 'user', user: { ...userA, role: 'admin' } }, deviceB), false);
-  assert.equal(access.canAccessDevice({ kind: 'user', user: { ...userA, role: 'super_admin' } }, deviceB), true);
+  assert.equal(await access.canAccessDevice({ kind: 'user', user: { ...userA, role: 'admin' } }, deviceB), false);
+  assert.equal(await access.canAccessDevice({ kind: 'user', user: { ...userA, role: 'super_admin' } }, deviceB), true);
 });
 
 await probe('Public latest only queries explicitly published devices', '', async () => {
+  rows.get(deviceA.deviceId).visibility = 'public';
   const route = load('src/app/api/readings/latest/route.ts', {
     '@/lib/public-feeds': { PUBLIC_FEEDS: { fixture: { devices: [{ deviceId: deviceA.deviceId }] } } },
     '@/lib/dynamo': { getLatestReading: async id => { assert.equal(id, deviceA.deviceId); return reading(id); } },

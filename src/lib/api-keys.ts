@@ -28,6 +28,7 @@ export interface ApiKeyRecord {
   createdAt: string;
   lastUsedAt: string | null;
   revokedAt: string | null;
+  deviceId?: string;
 }
 
 export interface ApiKeyPrincipal {
@@ -36,6 +37,7 @@ export interface ApiKeyPrincipal {
   orgId: string;
   scopes: ApiKeyScope[];
   keyId?: string;
+  deviceId?: string;
 }
 
 const DEFAULT_SCOPES: ApiKeyScope[] = [
@@ -75,6 +77,7 @@ function parseItem(item: Record<string, AttributeValue>): ApiKeyRecord {
     createdAt: text(item, "createdAt") ?? "",
     lastUsedAt: text(item, "lastUsedAt"),
     revokedAt: text(item, "revokedAt"),
+    deviceId: text(item, "deviceId") ?? undefined,
   };
 }
 
@@ -110,15 +113,18 @@ export async function createApiKey(input: {
   userId: string;
   orgId: string;
   scopes?: ApiKeyScope[];
+  deviceId?: string;
 }): Promise<{ key: string; record: ApiKeyRecord }> {
   const key = `bair1_${randomBytes(24).toString("base64url")}`;
   const id = `key_${randomBytes(10).toString("hex")}`;
   const prefix = key.slice(0, 12);
-  const scopes = input.scopes?.length ? input.scopes : DEFAULT_SCOPES;
+  const scopes = input.scopes ?? ["read:devices", "read:readings"];
+  if (!scopes.length) throw new Error("at least one scope is required");
   const createdAt = new Date().toISOString();
   const record: ApiKeyRecord = {
     id,
     name: input.name,
+    deviceId: input.deviceId,
     prefix,
     userId: input.userId,
     orgId: input.orgId,
@@ -133,6 +139,7 @@ export async function createApiKey(input: {
     Item: {
       id: { S: id },
       keyHash: { S: hashKey(key) },
+      ...(input.deviceId ? { deviceId: { S: input.deviceId } } : {}),
       prefix: { S: prefix },
       name: { S: input.name },
       userId: { S: input.userId },
@@ -201,6 +208,7 @@ export async function validateApiKey(
   return {
     type: "developer",
     keyId: record.id,
+    deviceId: record.deviceId,
     userId: record.userId,
     orgId: record.orgId,
     scopes: record.scopes,
