@@ -18,6 +18,7 @@ export type NotecardTelemetryPoint = {
   temperature: number | null;
   humidity: number | null;
   pressure: number | null;
+  pressureUnit?: string;
   batteryVoltage: number | null;
   motion: number | null;
   deviceStatus: string | null;
@@ -109,7 +110,7 @@ export default function NotecardOverview({
         {[
           ["Temperature", metric(telemetry.temperature, "°C")],
           ["Humidity", metric(telemetry.humidity, "%")],
-          ["Pressure", metric(telemetry.pressure == null ? null : telemetry.pressure / 100, " hPa", 0)],
+          ["Pressure", metric(telemetry.pressureUnit !== "hPa" ? null : telemetry.pressure, " hPa", 0)],
           ["Battery", metric(telemetry.batteryVoltage, " V", 2)],
         ].map(([label, value]) => (
           <div key={label} className="bg-surface/95 px-4 py-5">

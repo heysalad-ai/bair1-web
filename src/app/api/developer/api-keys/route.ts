@@ -34,7 +34,8 @@ export async function POST(request: Request) {
   const auth = await requireAuth(request);
   if (auth instanceof Response) return auth;
 
-  const body = await request.json().catch(() => ({}));
+  const body = await request.json().catch(() => null);
+  if (!body || typeof body !== "object" || Array.isArray(body)) return Response.json({ error: "JSON object required" }, { status: 400 });
   const name = String(body.name ?? "").trim();
   if (!name) {
     return Response.json({ error: "name required" }, { status: 400 });

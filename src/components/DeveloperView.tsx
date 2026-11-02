@@ -38,14 +38,10 @@ export default function DeveloperView() {
   const [devices, setDevices] = useState<Device[]>([]);
   const [keyName, setKeyName] = useState("Local development");
   const [selectedScopes, setSelectedScopes] = useState<ApiKeyScope[]>(
-    SCOPES.map((scope) => scope.value)
+    ["read:devices", "read:readings", "export:readings"]
   );
+  const [boundDevice, setBoundDevice] = useState("");
   const [newKey, setNewKey] = useState<string | null>(null);
-  const [deviceId, setDeviceId] = useState("");
-  const [deviceName, setDeviceName] = useState("");
-  const [deviceLocation, setDeviceLocation] = useState("");
-  const [lat, setLat] = useState("");
-  const [lng, setLng] = useState("");
   const [status, setStatus] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -84,8 +80,8 @@ export default function DeveloperView() {
     return () => window.clearTimeout(timer);
   }, [load]);
 
-  const sampleKey = newKey ?? "bair1_your_api_key";
-  const newestDeviceId = devices[0]?.deviceId || deviceId || "bair1-dev-001";
+  const sampleKey = "bair1_your_api_key";
+  const newestDeviceId = devices[0]?.deviceId || "bair1-dev-001";
   const cliExample = useMemo(
     () => `export BAIR1_API_KEY=${sampleKey}\nnpx -y @heysalad/bair1 devices\nnpx -y @heysalad/bair1 readings ${newestDeviceId}`,
     [newestDeviceId, sampleKey]
@@ -108,7 +104,7 @@ export default function DeveloperView() {
       const response = await fetch("/api/developer/api-keys", {
         method: "POST",
         headers,
-        body: JSON.stringify({ name: keyName, scopes: selectedScopes }),
+        body: JSON.stringify({ name: keyName, scopes: selectedScopes, deviceId: boundDevice || undefined }),
       });
       const data = await parseJson<{ key: string; record: ApiKeyRecord }>(response);
       setKeys((current) => [data.record, ...current]);
@@ -139,35 +135,6 @@ export default function DeveloperView() {
     }
   }
 
-  async function createDevice(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setStatus(null);
-    try {
-      const headers = await authHeaders();
-      const response = await fetch("/api/developer/devices", {
-        method: "POST",
-        headers,
-        body: JSON.stringify({
-          deviceId,
-          name: deviceName,
-          location: deviceLocation,
-          lat,
-          lng,
-        }),
-      });
-      const data = await parseJson<{ device: Device }>(response);
-      setDevices((current) => [data.device, ...current.filter((d) => d.deviceId !== data.device.deviceId)]);
-      setDeviceId("");
-      setDeviceName("");
-      setDeviceLocation("");
-      setLat("");
-      setLng("");
-      setStatus("Device provisioned. It can now submit readings with your API key.");
-    } catch (err) {
-      setStatus(err instanceof Error ? err.message : "Unable to provision device");
-    }
-  }
-
   function toggleScope(scope: ApiKeyScope) {
     setSelectedScopes((current) =>
       current.includes(scope)
@@ -180,7 +147,7 @@ export default function DeveloperView() {
     <section className="tab-content-enter px-4 pb-28 lg:px-0 lg:pb-8">
       <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <p className="mb-1 text-[11px] font-medium uppercase tracking-wider text-muted/70">Developer platform</p>
+
           <h1 className="text-xl font-semibold leading-tight text-ink lg:text-2xl">
             API keys, devices, and agent access
           </h1>
@@ -224,6 +191,7 @@ export default function DeveloperView() {
                 className="mt-2 w-full rounded-lg border border-border bg-bg px-3 py-2 text-sm normal-case tracking-normal text-ink outline-none focus:border-primary/70"
               />
             </label>
+            <label className="mt-4 block text-sm">Limit key to device<select value={boundDevice} onChange={e => setBoundDevice(e.target.value)} className="access-input"><option value="">All devices you own</option>{devices.map(d => <option key={d.deviceId} value={d.deviceId}>{d.name}</option>)}</select></label>
             <div className="mt-4 grid gap-2 sm:grid-cols-2">
               {SCOPES.map((scope) => (
                 <label
@@ -301,30 +269,7 @@ export default function DeveloperView() {
         </div>
 
         <div className="space-y-4">
-          <form onSubmit={createDevice} className="rounded-lg border border-border bg-surface/70 p-4 lg:p-5">
-            <div className="mb-4 flex items-start justify-between gap-3">
-              <div>
-                <h2 className="text-base font-semibold leading-tight text-ink">Provision device</h2>
-                <p className="text-xs text-muted">Register a sensor before firmware starts posting readings.</p>
-              </div>
-              <button
-                type="submit"
-                disabled={!deviceId.trim() || !deviceName.trim()}
-                className="rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                Provision
-              </button>
-            </div>
-            <div className="grid gap-3">
-              <input value={deviceId} onChange={(event) => setDeviceId(event.target.value)} placeholder="Device ID" className="rounded-lg border border-border bg-bg px-3 py-2 text-sm text-ink outline-none focus:border-primary/70" />
-              <input value={deviceName} onChange={(event) => setDeviceName(event.target.value)} placeholder="Device name" className="rounded-lg border border-border bg-bg px-3 py-2 text-sm text-ink outline-none focus:border-primary/70" />
-              <input value={deviceLocation} onChange={(event) => setDeviceLocation(event.target.value)} placeholder="Location" className="rounded-lg border border-border bg-bg px-3 py-2 text-sm text-ink outline-none focus:border-primary/70" />
-              <div className="grid grid-cols-2 gap-3">
-                <input value={lat} onChange={(event) => setLat(event.target.value)} placeholder="Latitude" className="rounded-lg border border-border bg-bg px-3 py-2 text-sm text-ink outline-none focus:border-primary/70" />
-                <input value={lng} onChange={(event) => setLng(event.target.value)} placeholder="Longitude" className="rounded-lg border border-border bg-bg px-3 py-2 text-sm text-ink outline-none focus:border-primary/70" />
-              </div>
-            </div>
-          </form>
+
 
           <div className="rounded-lg border border-border bg-surface/70 p-4 lg:p-5">
             <h2 className="mb-3 text-base font-semibold leading-tight text-ink">Provisioned devices</h2>

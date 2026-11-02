@@ -45,6 +45,8 @@ void makePayload(const Sample &s, JsonDocument &doc) {
   doc["board"] = "Seeed XIAO ESP32-S3";
   doc["transport"] = "wifi";
   doc["bootSession"] = bootSession;
+  doc["schemaVersion"] = 2;
+  doc["pressureUnit"] = "hPa";
   doc["sequence"] = s.sequence;
   doc["sample"] = s.sequence;
   doc["eventId"] = bootSession + ":" + String(s.sequence);
