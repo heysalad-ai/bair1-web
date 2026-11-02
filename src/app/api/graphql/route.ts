@@ -2,6 +2,7 @@ import { GraphQLError } from "graphql";
 import { createSchema, createYoga } from "graphql-yoga";
 import {
   getReadings,
+  getReadingPage,
   getLatestReading,
   getAllDevices,
   getReadingsInRange,
@@ -49,7 +50,7 @@ const schema = createSchema<GraphqlContext>({
     type Reading {
       deviceId: String!
       timestamp: String!
-      aqi: Int
+      aqi: Float
       gasRaw: Int
       gasVoltage: Float
       airState: String
@@ -67,6 +68,29 @@ const schema = createSchema<GraphqlContext>({
       pm10: Float
       sensorModel: String
       board: String
+      capturedAt: String
+      receivedAt: String
+      clockQuality: String
+      temperature: Float
+      humidity: Float
+      pressure: Float
+      altitudeMeters: Float
+      adcD3Raw: Float
+      adcD2Raw: Float
+      adcD3PinVoltage: Float
+      adcD2PinVoltage: Float
+      adcD3InputVoltage: Float
+      adcD2InputVoltage: Float
+      dhtTemp: Float
+      dhtHum: Float
+      accelX: Float
+      accelY: Float
+      accelZ: Float
+      gyroX: Float
+      gyroY: Float
+      gyroZ: Float
+      batteryVoltage: Float
+      batteryLevel: Float
     }
 
     type RegisteredDevice {
@@ -76,6 +100,9 @@ const schema = createSchema<GraphqlContext>({
       lat: Float
       lng: Float
       orgId: String!
+      visibility: String!
+      isOwner: Boolean!
+      permissions: [String!]!
       status: String!
       createdAt: String!
       latestReading: Reading
@@ -83,7 +110,7 @@ const schema = createSchema<GraphqlContext>({
 
     type AqiTimeSeries {
       timestamp: String!
-      aqi: Int
+      aqi: Float
       gasVoltage: Float
       rssi: Int
       lat: Float
@@ -94,7 +121,7 @@ const schema = createSchema<GraphqlContext>({
       timestamp: String!
       lat: Float!
       lng: Float!
-      aqi: Int
+      aqi: Float
       accuracy: Float
     }
 
@@ -104,6 +131,13 @@ const schema = createSchema<GraphqlContext>({
       temperature: Float
       humidity: Float
       pressure: Float
+      pressureUnit: String
+      measurementAt: String
+      temperatureAt: String
+      humidityAt: String
+      pressureAt: String
+      batteryVoltageAt: String
+      motionAt: String
       batteryVoltage: Float
       motion: Float
       deviceStatus: String
@@ -121,7 +155,10 @@ const schema = createSchema<GraphqlContext>({
       orgId: String!
     }
 
+    type ReadingPage { data: [Reading!]!, nextCursor: String, limit: Int! }
+
     type Query {
+      readingPage(deviceId: String!, limit: Int, cursor: String, from: String, to: String): ReadingPage!
       viewer: Viewer!
       readings(deviceId: String!, limit: Int): [Reading!]!
       latestReading(deviceId: String!): Reading
@@ -143,6 +180,11 @@ const schema = createSchema<GraphqlContext>({
   `,
   resolvers: {
     Query: {
+      readingPage: async (_parent, args, context) => {
+        await requireDeviceAccess(context.actor, args.deviceId);
+        try { return await getReadingPage(args.deviceId, args); }
+        catch (error) { if (error instanceof RangeError) throw new GraphQLError(error.message); throw error; }
+      },
       viewer: (_parent, _args, context) => {
         if (context.actor.kind === "user") {
           const { name, email, role, orgId } = context.actor.user;
@@ -225,6 +267,13 @@ const schema = createSchema<GraphqlContext>({
       },
     },
     RegisteredDevice: {
+      visibility: (parent: Device) => parent.visibility ?? "private",
+      isOwner: (parent: Device, _args, context) => context.actor.kind === "user" && (parent.ownerId === context.actor.user.userId || hasFullAccess(context.actor)),
+      permissions: async (parent: Device, _args, context) => {
+        const permissions = ["read", "control", "manage", "share"] as const;
+        const allowed = await Promise.all(permissions.map(permission => canAccessDevice(context.actor, parent, permission)));
+        return permissions.filter((_, index) => allowed[index]);
+      },
       latestReading: async (parent: Device) => {
         return getLatestReading(parent.deviceId);
       },

@@ -28,7 +28,7 @@ export async function resolveCellTower(
   tower: CellTower
 ): Promise<ResolvedLocation | null> {
   if (!GOOGLE_API_KEY) return null;
-  if (!tower.lac || !tower.cid) return null;
+  if (![tower.mcc, tower.mnc, tower.lac, tower.cid].every(value => Number.isInteger(value) && value >= 0) || !tower.cid) return null;
 
   try {
     const res = await fetch(
@@ -36,7 +36,9 @@ export async function resolveCellTower(
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        signal: AbortSignal.timeout(5000),
         body: JSON.stringify({
+          considerIp: false,
           cellTowers: [
             {
               cellId: tower.cid,
@@ -52,13 +54,10 @@ export async function resolveCellTower(
     if (!res.ok) return null;
 
     const data = await res.json();
-    if (!data.location) return null;
-
-    return {
-      lat: data.location.lat,
-      lng: data.location.lng,
-      accuracy: data.accuracy ?? 0,
-    };
+    const lat = data.location?.lat, lng = data.location?.lng, accuracy = data.accuracy;
+    if (![lat, lng, accuracy].every(value => typeof value === "number" && Number.isFinite(value))
+      || Math.abs(lat) > 90 || Math.abs(lng) > 180 || accuracy <= 0 || accuracy > 10000) return null;
+    return { lat, lng, accuracy };
   } catch {
     return null;
   }
@@ -78,7 +77,8 @@ export async function resolveWifiAccessPoints(
 
   // Google requires macAddress; filter to valid entries + cap at 8
   const filtered = accessPoints
-    .filter((ap) => ap && typeof ap.macAddress === "string" && ap.macAddress.length > 0)
+    .filter((ap) => ap && typeof ap.macAddress === "string" && /^[0-9a-f]{2}(:[0-9a-f]{2}){5}$/i.test(ap.macAddress))
+    .map(ap => ({ macAddress: ap.macAddress, ...(Number.isFinite(ap.signalStrength) ? { signalStrength: ap.signalStrength } : {}), ...(Number.isInteger(ap.channel) ? { channel: ap.channel } : {}) }))
     .slice(0, 8);
   if (filtered.length === 0) return null;
 
@@ -88,20 +88,18 @@ export async function resolveWifiAccessPoints(
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ wifiAccessPoints: filtered }),
+        signal: AbortSignal.timeout(5000),
+        body: JSON.stringify({ considerIp: false, wifiAccessPoints: filtered }),
       }
     );
 
     if (!res.ok) return null;
 
     const data = await res.json();
-    if (!data.location) return null;
-
-    return {
-      lat: data.location.lat,
-      lng: data.location.lng,
-      accuracy: data.accuracy ?? 0,
-    };
+    const lat = data.location?.lat, lng = data.location?.lng, accuracy = data.accuracy;
+    if (![lat, lng, accuracy].every(value => typeof value === "number" && Number.isFinite(value))
+      || Math.abs(lat) > 90 || Math.abs(lng) > 180 || accuracy <= 0 || accuracy > 10000) return null;
+    return { lat, lng, accuracy };
   } catch {
     return null;
   }

@@ -1,3 +1,4 @@
+import { requireUserDevice } from "@/lib/device-access";
 import { claimEnrollment } from "@/lib/device-enrollment";
 import { workspaceRole } from "@/lib/access-store";
 import { requireAuth } from "@/lib/auth";
@@ -55,9 +56,11 @@ export async function PATCH(request: Request) {
     return Response.json({ error: "deviceId required" }, { status: 400 });
   }
 
-  const existing = await getDevice(deviceId);
-  if (!existing || existing.ownerId !== auth.user.userId) {
-    return Response.json({ error: "device not found" }, { status: 404 });
+  const access = await requireUserDevice(request, deviceId, "manage");
+  if (access instanceof Response) return access;
+  const existing = access.device;
+  if ((body.workspaceId !== undefined || body.visibility === "public") && existing.ownerId !== auth.user.userId) {
+    return Response.json({ error: "only the owner can move or publish this device" }, { status: 403 });
   }
 
   const allowedStatuses: DeviceStatus[] = ["active", "inactive", "provisioning"];

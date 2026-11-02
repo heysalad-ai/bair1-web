@@ -62,6 +62,7 @@ export async function POST(req: NextRequest) {
       temperature: normalized.temperature,
       humidity: normalized.humidity,
       pressure: normalized.pressure,
+      pressureUnit: normalized.pressureUnit,
       batteryVoltage: normalized.batteryVoltage,
       motion: normalized.motion,
       deviceStatus: normalized.deviceStatus,

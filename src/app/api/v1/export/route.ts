@@ -1,3 +1,5 @@
+import { csvField } from "@/lib/csv";
+import { readingFieldNames } from "@/lib/measurement-contract";
 import { NextRequest, NextResponse } from "next/server";
 import { extractApiKeyFromHeaders, validateApiKey } from "@/lib/api-keys";
 import { accessibleDevice, accessibleDevices } from "@/lib/device-access";
@@ -8,40 +10,11 @@ export const dynamic = "force-dynamic";
 const DEFAULT_LIMIT = 1000;
 const MAX_LIMIT = 10000;
 
-function escapeCsvField(value: unknown): string {
-  if (value == null) return "";
-  const str = String(value);
-  if (str.includes(",") || str.includes('"') || str.includes("\n") || str.includes("\r")) {
-    return `"${str.replace(/"/g, '""')}"`;
-  }
-  return str;
-}
-
 function readingsToCsv(readings: Reading[]): string {
-  const headers = [
-    "deviceId",
-    "timestamp",
-    "aqi",
-    "pm1",
-    "pm25",
-    "pm4",
-    "pm10",
-    "gasRaw",
-    "gasVoltage",
-    "airState",
-    "rssi",
-    "firmwareVersion",
-    "uptimeMs",
-    "sample",
-    "transport",
-    "lat",
-    "lng",
-    "sensorModel",
-    "board",
-  ];
+  const headers = readingFieldNames;
 
   const rows = readings.map((r) =>
-    headers.map((h) => escapeCsvField(r[h as keyof Reading])).join(",")
+    headers.map((h) => csvField(r[h as keyof Reading])).join(",")
   );
 
   return [headers.join(","), ...rows].join("\n");
@@ -62,6 +35,7 @@ export async function GET(req: NextRequest) {
     const deviceParam = url.searchParams.get("device");
     const from = url.searchParams.get("from");
     const to = url.searchParams.get("to");
+    if (Boolean(from) !== Boolean(to)) return NextResponse.json({ error: "Both range dates are required" }, { status: 400 });
     const limitParam = url.searchParams.get("limit");
 
     if (format !== "json" && format !== "csv") {
@@ -102,7 +76,7 @@ export async function GET(req: NextRequest) {
             { status: 400 }
           );
         }
-        readings = await getReadingsInRange(deviceId, from, to);
+        readings = await getReadingsInRange(deviceId, from, to, limit);
       } else {
         readings = await getReadings(deviceId, limit);
       }
@@ -119,13 +93,17 @@ export async function GET(req: NextRequest) {
         status: 200,
         headers: {
           "Content-Type": "text/csv; charset=utf-8",
+          "Cache-Control": "private, no-store",
+          "X-Bair1-Export-Limit": String(limit),
+          "X-Bair1-Possibly-Truncated": String(allReadings.length === limit),
           "Content-Disposition": `attachment; filename="bair1-export-${new Date().toISOString().slice(0, 10)}.csv"`,
         },
       });
     }
 
-    return NextResponse.json({ data: allReadings });
+    return NextResponse.json({ data: allReadings, meta: { limit, possiblyTruncated: allReadings.length === limit, retentionDays: 14 } });
   } catch (err: unknown) {
+    if (err instanceof RangeError) return NextResponse.json({ error: err.message }, { status: 400 });
     const message = err instanceof Error ? err.message : "unknown error";
     console.error("[api/v1/export] GET error:", message);
     return NextResponse.json({ error: message }, { status: 500 });

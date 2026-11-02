@@ -102,3 +102,34 @@ test('Disabled access storage fails closed without offering legacy permanent sha
   await assert.rejects(store.createWorkspace(a, 'Disabled'));
   process.env.BAIR1_ACCESS_ENABLED = 'true';
 });
+
+test('History pages retain all fields and bind cursors to device, range and ownership generation', async () => {
+  process.env.BAIR1_ACCESS_ENABLED = 'true';
+  const id = randomUUID(), other = randomUUID(), base = Date.now() - 60000;
+  await devices.createDevice(fixture(id, a)); await devices.createDevice(fixture(other, a));
+  for (let i = 0; i < 8; i++) await db.storeReading({ deviceId: id, capturedAt: new Date(base + i*1000).toISOString(), eventId: randomUUID(), aqi: null, rawPayload: { temperature: i, adcD3Raw: i, pressure: 1010 } });
+  const from = new Date(base - 1000).toISOString(), to = new Date(base + 10000).toISOString();
+  const first = await db.getReadingPage(id, { limit: 3, from, to });
+  assert.equal(first.data.length, 3); assert.ok(first.nextCursor);
+  assert.equal(first.data[0].temperature, 7); assert.equal(first.data[0].adcD3Raw, 7); assert.equal(first.data[0].pressure, 1010);
+  await assert.rejects(db.getReadingPage(other, { cursor: first.nextCursor, from, to }), RangeError);
+  await assert.rejects(db.getReadingPage(id, { cursor: first.nextCursor }), RangeError);
+  const second = await db.getReadingPage(id, { limit: 3, cursor: first.nextCursor, from, to });
+  const third = await db.getReadingPage(id, { limit: 3, cursor: second.nextCursor, from, to });
+  assert.equal(new Set([...first.data, ...second.data, ...third.data].map(r => r.timestamp)).size, 8);
+  assert.equal(third.nextCursor, null);
+  await client.send(new UpdateItemCommand({ TableName: 'bair1-devices', Key: { deviceId: { S: id } }, UpdateExpression: 'SET ownershipVersion = :v', ExpressionAttributeValues: { ':v': { S: randomUUID() } } }));
+  await assert.rejects(db.getReadingPage(id, { cursor: first.nextCursor, from, to }), RangeError);
+});
+test('Sparse and out-of-order telemetry never refresh unrelated measurements', async () => {
+  const id = randomUUID(); await devices.createDevice(fixture(id, a));
+  const at = offset => new Date(Date.now() - 60000 + offset).toISOString();
+  const first = at(0), next = at(1000), older = at(-1000);
+  await db.setNotecardTelemetry({ deviceId: id, capturedAt: first, receivedAt: first, temperature: 21, pressure: 1010, pressureUnit: 'hPa' });
+  await db.setNotecardTelemetry({ deviceId: id, capturedAt: next, receivedAt: next, humidity: 50, deviceStatus: 'connected' });
+  await db.setNotecardTelemetry({ deviceId: id, capturedAt: older, receivedAt: older, temperature: 12 });
+  const latest = await db.getNotecardTelemetry(id);
+  assert.equal(latest.temperature, 21); assert.equal(latest.temperatureAt, first);
+  assert.equal(latest.humidityAt, next); assert.equal(latest.receivedAt, next);
+  assert.equal(latest.pressure, 1010); assert.equal(latest.pressureUnit, 'hPa'); assert.equal(latest.pressureAt, first);
+});

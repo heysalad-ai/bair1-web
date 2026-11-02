@@ -14,6 +14,7 @@ function load(file, mocks = {}, env = {}) {
   const loaded = { exports: {} };
   new Function('require', 'module', 'exports', 'process', code)(
     (name) => {
+      if (name === "./measurement-contract") return load("src/lib/measurement-contract.ts", {}, env);
       if (name === "@/lib/storage-config" || name === "./storage-config") return load("src/lib/storage-config.ts", {}, env);
       if (!(name in mocks)) throw new Error(`Unexpected dependency: ${name}`);
       return mocks[name];

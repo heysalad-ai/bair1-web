@@ -106,6 +106,8 @@ export async function POST(req: NextRequest) {
     }
 
 
+    // Network identifiers are transient geolocation inputs, not measurement storage.
+    delete body.wifiAccessPoints; delete body.cellTower;
     const stored = await storeReading({
       deviceId,
       aqi,

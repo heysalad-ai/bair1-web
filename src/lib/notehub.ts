@@ -26,6 +26,7 @@ export type NormalizedNotehubEvent = {
   temperature: number | null;
   humidity: number | null;
   pressure: number | null;
+  pressureUnit: "hPa" | "unknown";
   batteryVoltage: number | null;
   motion: number | null;
   deviceStatus: string | null;
@@ -106,6 +107,12 @@ export function normalizeNotehubEvent(
   const pm25 = numeric(body, "pm25", "pm2_5", "pm2.5");
   const pm4 = numeric(body, "pm4", "pm4_0");
   const pm10 = numeric(body, "pm10", "pm10_0");
+  const pressurePa = numeric(body, "pressurePa");
+  const pressureHpa = numeric(body, "pressureHpa");
+  const pressure = pressureHpa ?? (pressurePa != null ? pressurePa / 100
+    : body.pressureUnit === "hPa" ? numeric(body, "pressure")
+    : body.pressureUnit === "Pa" && numeric(body, "pressure") != null ? numeric(body, "pressure")! / 100 : null);
+  const pressureUnit = pressure != null ? "hPa" as const : "unknown" as const;
   const batteryVoltage = numeric(body, "batteryVoltage", "battery_voltage", "voltage");
   const motion = numeric(body, "motion");
   const deviceStatus = body.status == null ? null : String(body.status);
@@ -115,7 +122,7 @@ export function normalizeNotehubEvent(
     capturedAt,
     temperature,
     humidity: numeric(body, "humidity", "rh"),
-    pressure: numeric(body, "pressure", "pressurePa"),
+    pressure, pressureUnit,
     batteryVoltage,
     motion,
     deviceStatus,
@@ -142,7 +149,7 @@ export function normalizeNotehubEvent(
     receivedAt,
     temperature,
     humidity: numeric(body, "humidity", "rh"),
-    pressure: numeric(body, "pressure", "pressurePa"),
+    pressure, pressureUnit,
     batteryVoltage,
     motion,
     deviceStatus,

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { extractApiKeyFromHeaders, validateApiKey } from "@/lib/api-keys";
 import { accessibleDevice } from "@/lib/device-access";
-import { getReadings, getReadingsInRange } from "@/lib/dynamo";
+import { getReadingPage, getReadings, getReadingsInRange } from "@/lib/dynamo";
 
 export const dynamic = "force-dynamic";
 
@@ -37,6 +37,9 @@ export async function GET(
 
     const limit = limitParam ? Math.min(Math.max(1, parseInt(limitParam, 10) || 50), 10000) : 50;
 
+    if (url.searchParams.get("page") === "true") {
+      return NextResponse.json(await getReadingPage(deviceId, { from, to, limit, cursor: url.searchParams.get("cursor") }));
+    }
     let readings;
     if (from && to) {
       // Validate ISO date strings
@@ -45,15 +48,16 @@ export async function GET(
       if (isNaN(fromDate.getTime()) || isNaN(toDate.getTime())) {
         return NextResponse.json({ error: "Invalid date format. Use ISO 8601." }, { status: 400 });
       }
-      readings = await getReadingsInRange(deviceId, from, to);
+      readings = await getReadingsInRange(deviceId, from, to, limit);
       // Apply limit after range query
       readings = readings.slice(0, limit);
     } else {
       readings = await getReadings(deviceId, limit);
     }
 
-    return NextResponse.json({ data: readings });
+    return NextResponse.json({ data: readings, meta: { limit, possiblyTruncated: readings.length === limit } });
   } catch (err: unknown) {
+    if (err instanceof RangeError) return NextResponse.json({ error: err.message }, { status: 400 });
     const message = err instanceof Error ? err.message : "unknown error";
     console.error("[api/v1/devices/[deviceId]/readings] GET error:", message);
     return NextResponse.json({ error: message }, { status: 500 });

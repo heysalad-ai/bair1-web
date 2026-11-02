@@ -1,3 +1,4 @@
+import { boundedRange } from "./measurement-contract";
 import { getDevice, getAllDevicesRegistry } from "./devices";
 import { storageTable } from "./storage-config";
 import {
@@ -147,7 +148,7 @@ function parseItem(item: Record<string, AttributeValue>): Reading {
     // Extended sensor fields (Genesis Mini multi-sensor)
     temperature: rawNumber(raw, "temperature"),
     humidity: rawNumber(raw, "humidity"),
-    pressure: rawNumber(raw, "pressure"),
+    pressure: raw.transport === "notehub" && raw.pressureUnit !== "hPa" ? null : rawNumber(raw, "pressure"),
     dhtTemp: rawNumber(raw, "dhtTemp"),
     dhtHum: rawNumber(raw, "dhtHum"),
     accelX: rawNumber(raw, "accelX"),
@@ -220,7 +221,9 @@ export async function getLatestReadings(limit = 20): Promise<Reading[]> {
     .slice(0, limit);
 }
 
-export async function getReadingsInRange(deviceId: string, from: string, to: string): Promise<Reading[]> {
+export async function getReadingsInRange(deviceId: string, from: string, to: string, limit = 10000): Promise<Reading[]> {
+  const range = boundedRange(from, to);
+  limit = Math.min(Math.max(Math.floor(limit), 1), 10000);
   const version = (await getDevice(deviceId))?.ownershipVersion;
   const items = await queryAll({
     TableName: TABLE,
@@ -228,12 +231,40 @@ export async function getReadingsInRange(deviceId: string, from: string, to: str
     ExpressionAttributeNames: { "#timestamp": "timestamp" },
     ExpressionAttributeValues: {
       ":deviceId": { S: version && version !== "legacy" ? `${deviceId}#${version}` : deviceId },
-      ":from": { S: new Date(from).toISOString() },
-      ":to": { S: new Date(to).toISOString() + "~" },
+      ":from": { S: range.from },
+      ":to": { S: range.to + "~" },
     },
-    ScanIndexForward: true,
-  });
-  return items.map(parseItem);
+    Limit: Math.min(limit, 1000),
+    ScanIndexForward: false,
+  }, limit);
+  return items.map(parseItem).sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+}
+
+export async function getReadingPage(deviceId: string, options: { limit?: number; cursor?: string | null; from?: string | null; to?: string | null } = {}) {
+  if (options.limit != null && (!Number.isInteger(options.limit) || options.limit < 1)) throw new RangeError("Page limit must be a positive integer");
+  const limit = Math.min(options.limit ?? 200, 500);
+  const version = (await getDevice(deviceId))?.ownershipVersion;
+  const partition = version && version !== "legacy" ? `${deviceId}#${version}` : deviceId;
+  if (Boolean(options.from) !== Boolean(options.to)) throw new RangeError("Both range dates are required");
+  const range = options.from && options.to ? boundedRange(options.from, options.to) : null;
+  let exclusiveStartKey: Record<string, AttributeValue> | undefined;
+  if (options.cursor) {
+    try {
+      if (options.cursor.length > 1500) throw new Error();
+      const cursor = JSON.parse(Buffer.from(options.cursor, "base64url").toString("utf8"));
+      if (cursor.deviceId !== partition || cursor.from !== (range?.from ?? null) || cursor.to !== (range?.to ?? null)
+        || typeof cursor.timestamp !== "string" || cursor.timestamp.length > 200) throw new Error();
+      exclusiveStartKey = { deviceId: { S: partition }, timestamp: { S: cursor.timestamp } };
+    } catch { throw new RangeError("Pagination cursor does not match this device and range"); }
+  }
+  const result = await dynamoClient.send(new QueryCommand({ TableName: TABLE, Limit: limit, ScanIndexForward: false, ExclusiveStartKey: exclusiveStartKey,
+    KeyConditionExpression: range ? "deviceId = :d AND #t BETWEEN :f AND :t" : "deviceId = :d",
+    ...(range ? { ExpressionAttributeNames: { "#t": "timestamp" } } : {}),
+    ExpressionAttributeValues: { ":d": { S: partition }, ...(range ? { ":f": { S: range.from }, ":t": { S: range.to + "~" } } : {}) },
+  }));
+  const nextCursor = result.LastEvaluatedKey ? Buffer.from(JSON.stringify({ deviceId: partition, timestamp: result.LastEvaluatedKey.timestamp.S,
+    from: range?.from ?? null, to: range?.to ?? null })).toString("base64url") : null;
+  return { data: (result.Items ?? []).map(parseItem), nextCursor, limit };
 }
 
 export async function storeReading(input: ReadingInput): Promise<IngestionResult> {
@@ -516,6 +547,13 @@ export interface NotecardTelemetry {
   temperature: number | null;
   humidity: number | null;
   pressure: number | null;
+  pressureUnit?: "hPa" | "unknown";
+  measurementAt?: string | null;
+  temperatureAt?: string | null;
+  humidityAt?: string | null;
+  pressureAt?: string | null;
+  batteryVoltageAt?: string | null;
+  motionAt?: string | null;
   batteryVoltage: number | null;
   motion: number | null;
   deviceStatus: string | null;
@@ -588,31 +626,17 @@ export async function setNotecardTelemetry(
     batteryVoltage: telemetry.batteryVoltage,
     motion: telemetry.motion,
   };
-  if (Object.values(measurements).some((value) => value != null)) {
-    const measurementNames: Record<string, string> = {};
-    const measurementValues: Record<string, AttributeValue> = {
-      ":measurementAt": { S: telemetry.capturedAt },
-      ":updatedAt": { S: updatedAt },
-    };
-    const measurementExpressions = ["measurementAt = :measurementAt", "updatedAt = :updatedAt"];
-    for (const [key, value] of Object.entries(measurements)) {
-      if (value == null) continue;
-      measurementNames[`#${key}`] = key;
-      measurementValues[`:${key}`] = { N: String(value) };
-      measurementExpressions.push(`#${key} = :${key}`);
-    }
+  for (const [field, value] of Object.entries(measurements)) {
+    if (value == null) continue;
     try {
-      await dynamoClient.send(new UpdateItemCommand({
-        TableName: COMMANDS_TABLE,
-        Key: latestKey,
-        UpdateExpression: `SET ${measurementExpressions.join(", ")}`,
-        ExpressionAttributeNames: measurementNames,
-        ExpressionAttributeValues: measurementValues,
-        ConditionExpression: "attribute_not_exists(measurementAt) OR measurementAt <= :measurementAt",
+      await dynamoClient.send(new UpdateItemCommand({ TableName: COMMANDS_TABLE, Key: latestKey,
+        UpdateExpression: `SET #value = :value, #observed = :at, updatedAt = :now${field === "pressure" ? ", pressureUnit = :unit" : ""}`,
+        ConditionExpression: "attribute_not_exists(#observed) OR #observed <= :at",
+        ExpressionAttributeNames: { "#value": field, "#observed": `${field}At` },
+        ExpressionAttributeValues: { ":value": { N: String(value) }, ":at": { S: telemetry.capturedAt }, ":now": { S: updatedAt },
+          ...(field === "pressure" ? { ":unit": { S: telemetry.pressureUnit ?? "unknown" } } : {}) },
       }));
-    } catch (error) {
-      if (!(error instanceof ConditionalCheckFailedException)) throw error;
-    }
+    } catch (error) { if (!(error instanceof ConditionalCheckFailedException)) throw error; }
   }
 
   const safeFile = (telemetry.sourceFile ?? "event").replace(/[^a-zA-Z0-9._-]/g, "_");
@@ -624,6 +648,7 @@ export async function setNotecardTelemetry(
     capturedAt: { S: telemetry.capturedAt },
     receivedAt: { S: telemetry.receivedAt },
     updatedAt: { S: updatedAt },
+    pressureUnit: { S: telemetry.pressureUnit ?? "unknown" },
     expiresAt: { N: String(Math.floor(Date.now() / 1000) + NOTECARD_HISTORY_RETENTION_SECONDS) },
   };
   for (const [key, value] of Object.entries({
@@ -636,7 +661,7 @@ export async function setNotecardTelemetry(
     lng: telemetry.lng,
     locationAccuracy: telemetry.locationAccuracy,
   })) {
-    if (value != null) eventItem[key] = { N: String(value) };
+    if (value != null) { eventItem[key] = { N: String(value) }; eventItem[`${key}At`] = { S: telemetry.capturedAt }; }
   }
   for (const [key, value] of Object.entries({
     deviceStatus: telemetry.deviceStatus,
@@ -660,6 +685,13 @@ function parseNotecardTelemetryItem(
     temperature: item.temperature?.N == null ? null : Number(item.temperature.N),
     humidity: item.humidity?.N == null ? null : Number(item.humidity.N),
     pressure: item.pressure?.N == null ? null : Number(item.pressure.N),
+    pressureUnit: item.pressureUnit?.S === "hPa" ? "hPa" : "unknown",
+    measurementAt: ["temperature", "humidity", "pressure", "batteryVoltage", "motion"].map(field => item[`${field}At`]?.S).filter((value): value is string => Boolean(value)).sort().at(-1) ?? item.measurementAt?.S ?? null,
+    temperatureAt: item.temperatureAt?.S ?? null,
+    humidityAt: item.humidityAt?.S ?? null,
+    pressureAt: item.pressureAt?.S ?? null,
+    batteryVoltageAt: item.batteryVoltageAt?.S ?? null,
+    motionAt: item.motionAt?.S ?? null,
     batteryVoltage: item.batteryVoltage?.N == null ? null : Number(item.batteryVoltage.N),
     motion: item.motion?.N == null ? null : Number(item.motion.N),
     deviceStatus: item.deviceStatus?.S ?? null,
