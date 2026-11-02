@@ -1,3 +1,4 @@
+import { usageGate } from "@/lib/usage-budget";
 import { requireUserDevice } from "@/lib/device-access";
 import { accessStoreEnabled, createStoredShare, listStoredShares, revokeStoredShare } from "@/lib/access-store";
 
@@ -15,10 +16,12 @@ export async function POST(request: Request, context: Context) {
   const access = await requireUserDevice(request, deviceId, "share");
   if (access instanceof Response) return access;
   if (!accessStoreEnabled()) return Response.json({ error: "sharing is not configured" }, { status: 503 });
-  const body = await request.json().catch(() => ({}));
+  const body = await request.json().catch(() => null);
+  if (!body || typeof body !== "object" || Array.isArray(body)) return Response.json({ error: "JSON object required" }, { status: 400 });
   const hours = body.hours ?? 24;
   if (!Number.isInteger(hours) || hours < 1 || hours > 168) return Response.json({ error: "expiry must be between 1 and 168 hours" }, { status: 400 });
   if ((await listStoredShares(deviceId, access.device.ownerId)).length >= 100) return Response.json({ error: "share limit reached; revoke unused links and wait for expiry cleanup" }, { status: 429 });
+  const limited = await usageGate("share", access.user.userId); if (limited) return limited;
   const share = await createStoredShare(deviceId, access.device.ownerId, access.device.ownershipVersion ?? "legacy", hours);
   const url = new URL(`/share/${encodeURIComponent(deviceId)}`, process.env.NEXT_PUBLIC_APP_URL ?? "https://app.bair1.live");
   url.searchParams.set("token", share.token);

@@ -55,6 +55,7 @@ function load(rel, overrides = {}) {
     '@/lib/devices': devices, './devices': devices,
     '@/lib/dynamo': dynamo, './dynamo': dynamo,
     '@/lib/google-env': google,
+    '@/lib/usage-budget': { usageGate: async () => null },
     '@/lib/openai': { GPT_5_6_MODEL: 'synthetic-model' },
     '@/lib/public-feeds': { getPublicFeedSnapshot: async () => null },
     '@/lib/aqi': { getAqiState: () => ({ level: 'synthetic', guidance: ['Synthetic fixture'] }) },
@@ -134,7 +135,7 @@ await probe('Anonymous private chat fails before reaching any data/model tool', 
       streamText: options => { capturedChat = options; return { toUIMessageStreamResponse: () => new Response('synthetic stream') }; } },
     '@ai-sdk/openai': { openai: () => ({ synthetic: true }) },
   });
-  const res = await route.POST(request('POST', { messages: [] }, 'anonymous'));
+  const res = await route.POST(request('POST', { deviceId: deviceA.deviceId, messages: [{ role: 'user', parts: [{ type: 'text', text: 'Synthetic question' }] }] }, 'anonymous'));
   assert.equal(res.status, 401); assert.equal(capturedChat, null); assert.equal(readCount, 0);
 });
 await probe('Anonymous voice briefing fails before reading a supplied device', 'isolation-gap', async () => {
@@ -150,13 +151,14 @@ await probe('An authenticated AI tool cannot query another owner and lists only 
       streamText: options => { capturedChat = options; return { toUIMessageStreamResponse: () => new Response('synthetic stream') }; } },
     '@ai-sdk/openai': { openai: () => ({ synthetic: true }) },
   });
-  assert.equal((await route.POST(request('POST', { messages: [] }))).status, 200);
+  assert.equal((await route.POST(request('POST', { deviceId: deviceA.deviceId, messages: [{ role: 'user', parts: [{ type: 'text', text: 'Synthetic question' }] }] }))).status, 200);
   const listed = await capturedChat.tools.listDevices.execute({});
   assert.deepEqual(listed.map(d => d.deviceId), [deviceA.deviceId]);
   assert.equal((await capturedChat.tools.getSensorData.execute({ deviceId: deviceB.deviceId })).error, 'device not found');
   assert.equal((await capturedChat.tools.getSensorHistory.execute({ deviceId: deviceB.deviceId, hoursBack: 1 })).error, 'device not found');
   assert.equal(readCount, 0);
-  assert.equal((await capturedChat.tools.getSensorData.execute({ deviceId: deviceA.deviceId })).deviceId, deviceA.deviceId);
+  const dto = await capturedChat.tools.getSensorData.execute({ deviceId: deviceA.deviceId });
+  assert.equal(dto.pm25, 7); assert.equal(dto.deviceId, undefined); assert.equal(dto.lat, undefined);
 });
 await probe('Owner command creation succeeds while ack/status reject another owner', '', async () => {
   const own = load('src/app/api/v1/devices/[deviceId]/commands/route.ts');

@@ -5,6 +5,7 @@ import {
   GetItemCommand,
   PutItemCommand,
   ScanCommand,
+  QueryCommand,
   UpdateItemCommand,
   type AttributeValue,
 } from "@aws-sdk/client-dynamodb";
@@ -56,13 +57,18 @@ function parseItem(item: Record<string, AttributeValue>): Device {
 async function scanDevices(filter?: { expression: string; values: Record<string, AttributeValue> }) {
   const devices: Device[] = [];
   let exclusiveStartKey: Record<string, AttributeValue> | undefined;
+  let scanned = 0;
   do {
     const result = await dynamoClient.send(new ScanCommand({
       TableName: TABLE,
       ExclusiveStartKey: exclusiveStartKey,
+      Limit: 200,
       ...(filter ? { FilterExpression: filter.expression, ExpressionAttributeValues: filter.values } : {}),
     }));
     devices.push(...(result.Items ?? []).map(parseItem));
+    if (devices.length > 1000) throw new Error("Registry listing exceeds 1000 devices; use indexed access");
+    scanned += result.ScannedCount ?? 0;
+    if (scanned >= 1000 && result.LastEvaluatedKey) throw new Error("Registry scan exceeds safety limit; configure indexed access");
     exclusiveStartKey = result.LastEvaluatedKey;
   } while (exclusiveStartKey);
   return devices.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
@@ -147,9 +153,27 @@ export async function getAllDevicesRegistry(): Promise<Device[]> {
 }
 
 export async function getDevicesForUser(userId: string): Promise<Device[]> {
-  return scanDevices({ expression: "ownerId = :userId", values: { ":userId": { S: userId } } });
+  return process.env.BAIR1_REGISTRY_INDEXES_ENABLED === "true" ? indexedDevices("ownerId", userId) : scanDevices({ expression: "ownerId = :userId", values: { ":userId": { S: userId } } });
 }
 
 export async function getDevicesForOrg(orgId: string): Promise<Device[]> {
-  return scanDevices({ expression: "orgId = :orgId", values: { ":orgId": { S: orgId } } });
+  return process.env.BAIR1_REGISTRY_INDEXES_ENABLED === "true" ? indexedDevices("orgId", orgId) : scanDevices({ expression: "orgId = :orgId", values: { ":orgId": { S: orgId } } });
+}
+
+async function indexedDevices(field: "ownerId" | "orgId", value: string): Promise<Device[]> {
+  const devices: Device[] = []; let cursor: Record<string, AttributeValue> | undefined;
+  do {
+    const result = await dynamoClient.send(new QueryCommand({ TableName: TABLE,
+      IndexName: `${field}-deviceId-index`, KeyConditionExpression: "#field = :value",
+      ExpressionAttributeNames: { "#field": field }, ExpressionAttributeValues: { ":value": { S: value } },
+      ProjectionExpression: "deviceId", Limit: 200, ExclusiveStartKey: cursor,
+    }));
+    for (const row of result.Items ?? []) {
+      const current = row.deviceId?.S ? await getDevice(row.deviceId.S) : null;
+      if (current && current[field] === value) devices.push(current);
+    }
+    if (devices.length > 1000) throw new Error("Registry listing exceeds 1000 devices");
+    cursor = result.LastEvaluatedKey;
+  } while (cursor);
+  return devices;
 }

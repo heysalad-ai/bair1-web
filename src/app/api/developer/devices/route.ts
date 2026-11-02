@@ -27,7 +27,8 @@ export async function POST(request: Request) {
   const auth = await requireAuth(request);
   if (auth instanceof Response) return auth;
 
-  const body = await request.json().catch(() => ({}));
+  const body = await request.json().catch(() => null);
+  if (!body || typeof body !== "object" || Array.isArray(body)) return Response.json({ error: "JSON object required" }, { status: 400 });
   const deviceId = String(body.deviceId ?? "").trim();
   const name = String(body.name ?? "").trim();
   if (!deviceId || !name) {
@@ -50,7 +51,8 @@ export async function PATCH(request: Request) {
   const auth = await requireAuth(request);
   if (auth instanceof Response) return auth;
 
-  const body = await request.json().catch(() => ({}));
+  const body = await request.json().catch(() => null);
+  if (!body || typeof body !== "object" || Array.isArray(body)) return Response.json({ error: "JSON object required" }, { status: 400 });
   const deviceId = String(body.deviceId ?? "").trim();
   if (!deviceId) {
     return Response.json({ error: "deviceId required" }, { status: 400 });

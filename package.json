@@ -4,13 +4,14 @@
   "license": "AGPL-3.0-only",
   "private": true,
   "scripts": {
-    "test": "node --test tests/measurement-labels.mjs tests/storage-config.mjs tests/customer-isolation.mjs tests/public-reading.mjs tests/measurement-contract.mjs",
+    "test": "node --test tests/measurement-labels.mjs tests/storage-config.mjs tests/customer-isolation.mjs tests/public-reading.mjs tests/measurement-contract.mjs tests/request-limits.mjs tests/api-key-revocation.mjs",
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
     "test:ingestion": "python3 tests/firmware-contract.py && BAIR1_FIRMWARE_FIXTURE=/tmp/bair1-firmware-payload.json node --test tests/reading-ingestion.integration.mjs && python3 tests/check-firmware-replies.py",
-    "test:access": "node --test tests/access-store.integration.mjs"
+    "test:access": "node --test tests/access-store.integration.mjs",
+    "test:restore": "node --test tests/restore.integration.mjs"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.85",

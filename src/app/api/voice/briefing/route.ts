@@ -1,3 +1,5 @@
+import { usageGate } from "@/lib/usage-budget";
+import { validCoordinates } from "@/lib/request-limits";
 import { requireAuth } from "@/lib/auth";
 import { accessibleDevice } from "@/lib/device-access";
 import { NextRequest, NextResponse } from "next/server";
@@ -19,6 +21,8 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "device not found" }, { status: 404 });
   }
 
+  if (!validCoordinates(lat, lng)) return NextResponse.json({ error: "Valid coordinates required" }, { status: 400 });
+  const limited = await usageGate("voice", auth.user.userId); if (limited) return limited;
   // Gather data
   const [sensorReading, googleAq, weather, pollen] = await Promise.all([
     deviceId ? getLatestReading(deviceId) : null,
@@ -33,7 +37,7 @@ export async function GET(req: NextRequest) {
   const greeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
   parts.push(`${greeting}. Here's your air quality briefing.`);
 
-  if (sensorReading) {
+  if (sensorReading?.aqi != null) {
     const state = getAqiState(sensorReading.aqi);
     parts.push(
       `Your sensor is reading an AQI of ${sensorReading.aqi}, which is ${state.level}. ${state.guidance[0]}.`
@@ -77,6 +81,7 @@ export async function GET(req: NextRequest) {
       `https://api.elevenlabs.io/v1/text-to-speech/${VOICE_ID}`,
       {
         method: "POST",
+        signal: AbortSignal.timeout(15000),
         headers: {
           "Content-Type": "application/json",
           "xi-api-key": ELEVENLABS_API_KEY,

@@ -5,7 +5,8 @@ import { ConditionalCheckFailedException } from "@aws-sdk/client-dynamodb";
 export async function POST(request: Request) {
   const auth = await requireRole(request, ["super_admin"]);
   if (auth instanceof Response) return auth;
-  const body = await request.json().catch(() => ({}));
+  const body = await request.json().catch(() => null);
+  if (!body || typeof body !== "object" || Array.isArray(body)) return Response.json({ error: "JSON object required" }, { status: 400 });
   if (typeof body.deviceId !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(body.deviceId)
     || typeof body.name !== "string" || !body.name.trim() || body.name.length > 100) return Response.json({ error: "valid device id and name required" }, { status: 400 });
   try { return Response.json(await provisionEnrollment(body.deviceId, body.name.trim()), { status: 201, headers: { "Cache-Control": "private, no-store" } }); }

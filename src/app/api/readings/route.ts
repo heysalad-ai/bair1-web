@@ -1,3 +1,4 @@
+import { usageGate } from "@/lib/usage-budget";
 import { accessibleDevices } from "@/lib/device-access";
 import { ingestionPaused } from "@/lib/storage-config";
 import { validateReadingBody, InvalidReadingError } from "@/lib/reading-ingestion";
@@ -74,9 +75,12 @@ export async function POST(req: NextRequest) {
     }
 
 
+    const wantsLocation = body.lat == null && body.lng == null && Boolean(body.cellTower || body.wifiAccessPoints);
+    const canGeolocate = wantsLocation && !await usageGate("geolocation", principal.keyId ?? "system-ingestion");
+    // Optional enrichment never blocks measurement acceptance.
     // Resolve cell tower to lat/lng if present and no lat/lng already
     const ct = body.cellTower as Record<string, unknown> | undefined;
-    if (ct && body.lat == null && body.lng == null) {
+    if (canGeolocate && ct && body.lat == null && body.lng == null) {
       const loc = await resolveCellTower({
         mcc: Number(ct.mcc ?? 0),
         mnc: Number(ct.mnc ?? 0),
@@ -92,7 +96,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Resolve WiFi access points to lat/lng if present and still no lat/lng
-    if (body.lat == null && body.lng == null) {
+    if (canGeolocate && body.lat == null && body.lng == null) {
       const aps = body.wifiAccessPoints;
       if (Array.isArray(aps) && aps.length > 0) {
         const loc = await resolveWifiAccessPoints(aps as WifiAccessPoint[]);

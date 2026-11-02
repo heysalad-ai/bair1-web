@@ -22,7 +22,7 @@ export default function AIChatView({ deviceId, lat, lng }: Props) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
   const { messages, sendMessage, status } = useChat({
-    transport: new DefaultChatTransport({ api: "/api/chat", headers: async () => ({ Authorization: `Bearer ${await getAccessTokenSilently()}` }) }),
+    transport: new DefaultChatTransport({ api: "/api/chat", body: { deviceId }, headers: async () => ({ Authorization: `Bearer ${await getAccessTokenSilently()}` }) }),
     messages: [
       {
         id: "system-intro",
@@ -62,6 +62,7 @@ export default function AIChatView({ deviceId, lat, lng }: Props) {
 
       const res = await authenticatedFetch(`/api/voice/briefing?${params}`);
       const data = await res.json();
+      if (!res.ok) { setBriefingText(data.error || "Briefing unavailable. Try again later."); setIsVoicePlaying(false); return; }
       setBriefingText(data.text);
 
       if (data.audio) {
@@ -73,6 +74,7 @@ export default function AIChatView({ deviceId, lat, lng }: Props) {
         setIsVoicePlaying(false);
       }
     } catch {
+      setBriefingText("Briefing unavailable. Check your connection and try again.");
       setIsVoicePlaying(false);
     }
   };

@@ -25,7 +25,7 @@ type StudioSummary = {
 type Props = {
   feedName: string;
   location: string;
-  deviceIds: string[];
+  feedSlug: string;
   chartData: StudioChartPoint[];
   summary: StudioSummary;
 };
@@ -58,7 +58,7 @@ const prompts = [
   "What does the forecast suggest for the next 30 minutes?",
 ];
 
-export default function LiveAirChat({ feedName, location, deviceIds, chartData, summary }: Props) {
+export default function LiveAirChat({ feedName, location, feedSlug, chartData, summary }: Props) {
   const { isAuthenticated, getAccessTokenSilently, loginWithRedirect } = useAuth0();
   const [input, setInput] = useState("");
   const { messages, sendMessage, status } = useChat({
@@ -66,7 +66,8 @@ export default function LiveAirChat({ feedName, location, deviceIds, chartData, 
       api: "/api/chat",
       headers: async () => ({ Authorization: `Bearer ${await getAccessTokenSilently()}` }),
       body: {
-        feedContext: `${feedName} at ${location}. Feed device IDs: ${deviceIds.join(", ")}.`,
+        feedSlug,
+        feedContext: `${feedName} at ${location}.`,
       },
     }),
   });

@@ -33,6 +33,7 @@ test('PM-only uploads preserve PM and leave AQI unavailable; explicit zero stays
     '@/lib/api-keys': { extractApiKeyFromHeaders: () => null, validateApiKey: async () => ({ type: 'system' }) },
     '@/lib/dynamo': { storeReading: async (value) => { stored = value; return {outcome:'stored',timestamp:new Date().toISOString(),capturedAt:null,receivedAt:new Date().toISOString(),clockQuality:'unknown'}; } },
     '@/lib/geolocation': {},
+    '@/lib/usage-budget': { usageGate: async () => { throw new Error('Unexpected geolocation reservation'); } },
     '@/lib/device-access': {},
     '@/lib/devices': { getDevice: async () => ({}), updateDevice: async () => {} },
   });

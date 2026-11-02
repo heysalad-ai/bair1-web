@@ -133,3 +133,14 @@ test('Sparse and out-of-order telemetry never refresh unrelated measurements', a
   assert.equal(latest.humidityAt, next); assert.equal(latest.receivedAt, next);
   assert.equal(latest.pressure, 1010); assert.equal(latest.pressureUnit, 'hPa'); assert.equal(latest.pressureAt, first);
 });
+test('Distributed budgets are atomic across concurrent workers and fail closed when disabled', async () => {
+  const usage = load('src/lib/usage-budget.ts'), subject = randomUUID();
+  const results = await Promise.allSettled(Array.from({length: 35}, () => usage.reserveUsage('chat', subject)));
+  assert.equal(results.filter(r => r.status === 'fulfilled').length, 30);
+  assert.equal(results.filter(r => r.status === 'rejected' && r.reason.status === 429).length, 5);
+  const {Item} = await client.send(new GetItemCommand({TableName:'bair1-access',Key:{scope:{S:`usage:chat:${new Date().toISOString().slice(0,10)}`},entry:{S:'global'}}}));
+  assert.equal(Number(Item.count.N), 30); // rejected subject reservations do not consume global capacity
+  delete process.env.BAIR1_ACCESS_ENABLED;
+  await assert.rejects(usage.reserveUsage('voice', subject), error => error.status === 503);
+  process.env.BAIR1_ACCESS_ENABLED = 'true';
+});

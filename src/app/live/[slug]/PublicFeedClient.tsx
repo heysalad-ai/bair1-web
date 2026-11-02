@@ -539,7 +539,7 @@ export default function PublicFeedClient({ initialSnapshot }: Props) {
           <LiveAirChat
             feedName={snapshot.title || "Bair1 live air feed"}
             location={snapshot.location}
-            deviceIds={snapshot.devices.map((device) => device.deviceId)}
+            feedSlug={snapshot.slug}
             chartData={studioChartData}
             summary={studioSummary}
           />

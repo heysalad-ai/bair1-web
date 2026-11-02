@@ -1,3 +1,4 @@
+import { usageGate } from "@/lib/usage-budget";
 import { requireAuth } from "@/lib/auth";
 import { accessStoreEnabled, listWorkspaces, createWorkspace, workspaceRole, setWorkspaceMember, createWorkspaceInvite, acceptWorkspaceInvite, workspaceMembers } from "@/lib/access-store";
 
@@ -15,7 +16,9 @@ export async function POST(request: Request) {
   const auth = await requireAuth(request);
   if (auth instanceof Response) return auth;
   if (!accessStoreEnabled()) return Response.json({ error: "workspaces are not configured" }, { status: 503 });
-  const body = await request.json().catch(() => ({}));
+  const body = await request.json().catch(() => null);
+  if (!body || typeof body !== "object" || Array.isArray(body)) return Response.json({ error: "JSON object required" }, { status: 400 });
+  const limited = await usageGate("workspace", auth.user.userId); if (limited) return limited;
   if (body.action === "accept") {
     if (typeof body.workspaceId !== "string" || !body.workspaceId.startsWith("workspace:") || typeof body.token !== "string" || body.token.length > 100) return Response.json({ error: "valid invitation required" }, { status: 400 });
     try { await acceptWorkspaceInvite(body.workspaceId, body.token, auth.user.userId); }
@@ -32,7 +35,8 @@ export async function POST(request: Request) {
 export async function PATCH(request: Request) {
   const auth = await requireAuth(request);
   if (auth instanceof Response) return auth;
-  const body = await request.json().catch(() => ({}));
+  const body = await request.json().catch(() => null);
+  if (!body || typeof body !== "object" || Array.isArray(body)) return Response.json({ error: "JSON object required" }, { status: 400 });
   if (typeof body.workspaceId !== "string" || typeof body.userId !== "string" || !["admin", "member", null].includes(body.role)) return Response.json({ error: "workspace, member and role required" }, { status: 400 });
   if (await workspaceRole(auth.user.userId, body.workspaceId) !== "owner") return Response.json({ error: "workspace not found" }, { status: 404 });
   const current = await workspaceRole(body.userId, body.workspaceId);
