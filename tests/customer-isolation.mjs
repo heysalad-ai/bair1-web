@@ -193,7 +193,7 @@ await probe('Public latest only queries explicitly published devices', '', async
   const res = await route.GET();
   assert.equal(res.status, 200); assert.equal((await res.json()).deviceId, deviceA.deviceId);
 });
-test('New personal users do not join a shared default or migrate unverified email', async (t) => {
+test('New personal users do not inherit history or roles through either verified or unverified email', async (t) => {
   const originalFetch = globalThis.fetch; t.after(() => { globalThis.fetch = originalFetch; });
   const sub = randomUUID(); let saved; let emailLookups = 0;
   globalThis.fetch = async () => Response.json({ sub, email: 'fixture@example.invalid', email_verified: false });
@@ -201,6 +201,9 @@ test('New personal users do not join a shared default or migrate unverified emai
     getUser: async () => null, getUserByEmail: async () => { emailLookups++; return null; },
     upsertUser: async user => { saved = user; },
   } })('src/lib/auth.ts');
-  await realAuth.getOrCreateUser(randomUUID());
-  assert.ok(saved.orgId.startsWith('personal:')); assert.equal(saved.role, 'user'); assert.equal(emailLookups, 0);
+  for (const email_verified of [false, true]) {
+    globalThis.fetch = async () => Response.json({ sub, email: 'fixture@example.invalid', email_verified });
+    await realAuth.getOrCreateUser(randomUUID());
+    assert.ok(saved.orgId.startsWith('personal:')); assert.equal(saved.role, 'user'); assert.equal(emailLookups, 0);
+  }
 });

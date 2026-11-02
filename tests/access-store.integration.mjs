@@ -144,3 +144,22 @@ test('Distributed budgets are atomic across concurrent workers and fail closed w
   await assert.rejects(usage.reserveUsage('voice', subject), error => error.status === 503);
   process.env.BAIR1_ACCESS_ENABLED = 'true';
 });
+test('Read snapshots reject ownership changes and workspace revocation during retrieval',async()=>{
+ const id=randomUUID();await devices.createDevice(fixture(id,a));
+ await assert.rejects(access.withDeviceRead(actor(a),id,async()=>{
+  await client.send(new UpdateItemCommand({TableName:'bair1-devices',Key:{deviceId:{S:id}},UpdateExpression:'SET ownerId = :u',ExpressionAttributeValues:{':u':{S:b}}}));return {private:true};
+ }),access.DeviceAccessChanged);
+ const workspace=await store.createWorkspace(a,'Synthetic race'),invite=await store.createWorkspaceInvite(workspace.workspaceId);
+ await store.acceptWorkspaceInvite(workspace.workspaceId,invite.token,b);
+ const shared=randomUUID();await devices.createDevice(fixture(shared,a,{visibility:'workspace',orgId:workspace.workspaceId}));
+ await assert.rejects(access.withDeviceRead(actor(b),shared,async()=>{await store.setWorkspaceMember(workspace.workspaceId,b,null);return {private:true};}),access.DeviceAccessChanged);
+});
+test('Command enqueue, acknowledgement and state writes cannot cross enrollment changes',async()=>{
+ const id=randomUUID();await devices.createDevice(fixture(id,a));const before=await devices.getDevice(id);
+ const command=await db.enqueueCommand(id,'set_led',{on:true,brightness:12},before);
+ await client.send(new UpdateItemCommand({TableName:'bair1-devices',Key:{deviceId:{S:id}},UpdateExpression:'SET ownershipVersion = :v',ExpressionAttributeValues:{':v':{S:randomUUID()}}}));
+ await assert.rejects(db.enqueueCommand(id,'get_state',null,before));
+ await assert.rejects(db.ackCommand(id,command.commandId,true,null,before));
+ await assert.rejects(db.setDeviceState(id,{on:true,brightness:12},null,before));
+ assert.equal((await db.pollCommands(id)).length,0);
+});
