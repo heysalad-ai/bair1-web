@@ -1,13 +1,12 @@
+import { requireRole } from "@/lib/auth";
 import { NextRequest, NextResponse } from "next/server";
 import Stripe from "stripe";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(req: NextRequest) {
-  const { secret } = await req.json();
-  if (secret !== process.env.SENSOR_API_KEY) {
-    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  }
+  const auth = await requireRole(req, ["super_admin"]);
+  if (auth instanceof Response) return auth;
 
   const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
     apiVersion: "2026-05-27.dahlia",

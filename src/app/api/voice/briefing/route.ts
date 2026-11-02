@@ -1,3 +1,5 @@
+import { requireAuth } from "@/lib/auth";
+import { accessibleDevice } from "@/lib/device-access";
 import { NextRequest, NextResponse } from "next/server";
 import { getLatestReading } from "@/lib/dynamo";
 import { getAirQuality, getWeather, getPollenForecast } from "@/lib/google-env";
@@ -7,9 +9,15 @@ const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY || "";
 const VOICE_ID = "21m00Tcm4TlvDq8ikWAM"; // Rachel
 
 export async function GET(req: NextRequest) {
+  const auth = await requireAuth(req);
+  if (auth instanceof Response) return auth;
   const deviceId = req.nextUrl.searchParams.get("deviceId");
   const lat = parseFloat(req.nextUrl.searchParams.get("lat") ?? "51.4775");
   const lng = parseFloat(req.nextUrl.searchParams.get("lng") ?? "0.0656");
+
+  if (deviceId && !await accessibleDevice({ kind: "user", user: auth.user }, deviceId)) {
+    return NextResponse.json({ error: "device not found" }, { status: 404 });
+  }
 
   // Gather data
   const [sensorReading, googleAq, weather, pollen] = await Promise.all([

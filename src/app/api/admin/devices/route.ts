@@ -8,7 +8,7 @@ import {
 } from "@/lib/devices";
 
 export async function GET(request: Request) {
-  const auth = await requireRole(request, ["super_admin", "admin"]);
+  const auth = await requireRole(request, ["super_admin"]);
   if (auth instanceof Response) return auth;
 
   const devices = await getAllDevicesRegistry();
@@ -16,7 +16,7 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const auth = await requireRole(request, ["super_admin", "admin"]);
+  const auth = await requireRole(request, ["super_admin"]);
   if (auth instanceof Response) return auth;
 
   const body = await request.json();
@@ -46,7 +46,7 @@ export async function POST(request: Request) {
 }
 
 export async function PATCH(request: Request) {
-  const auth = await requireRole(request, ["super_admin", "admin"]);
+  const auth = await requireRole(request, ["super_admin"]);
   if (auth instanceof Response) return auth;
 
   const body = await request.json();

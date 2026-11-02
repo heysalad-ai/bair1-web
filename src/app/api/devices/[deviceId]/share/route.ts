@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import { requireAuth } from "@/lib/auth";
+import { canAccessDevice } from "@/lib/device-access";
 import { getDevice } from "@/lib/devices";
 import { createDeviceShareToken } from "@/lib/device-sharing";
 
@@ -14,12 +15,7 @@ export async function POST(
 
   const { deviceId } = await params;
   const device = await getDevice(deviceId);
-  const hasAccess = device && (
-    auth.user.role === "super_admin"
-    || auth.user.role === "admin"
-    || device.ownerId === auth.user.userId
-    || device.orgId === auth.user.orgId
-  );
+  const hasAccess = device && canAccessDevice({ kind: "user", user: auth.user }, device);
   if (!hasAccess) return Response.json({ error: "device not found" }, { status: 404 });
 
   const token = createDeviceShareToken(deviceId);

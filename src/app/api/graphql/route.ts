@@ -11,6 +11,7 @@ import {
 import { getAllDevicesRegistry, getDevice, type Device } from "@/lib/devices";
 import { extractApiKeyFromHeaders, validateApiKey, type ApiKeyPrincipal } from "@/lib/api-keys";
 import { requireAuth } from "@/lib/auth";
+import { canAccessDevice, hasPlatformAccess } from "@/lib/device-access";
 import type { User } from "@/lib/users";
 
 type Actor =
@@ -19,19 +20,7 @@ type Actor =
 
 type GraphqlContext = { actor: Actor };
 
-function hasFullAccess(actor: Actor) {
-  return actor.kind === "api-key"
-    ? actor.principal.type === "system"
-    : actor.user.role === "super_admin" || actor.user.role === "admin";
-}
-
-function canAccessDevice(actor: Actor, device: Device) {
-  if (hasFullAccess(actor)) return true;
-  if (actor.kind === "api-key") {
-    return device.ownerId === actor.principal.userId;
-  }
-  return device.ownerId === actor.user.userId || device.orgId === actor.user.orgId;
-}
+const hasFullAccess = hasPlatformAccess;
 
 async function requireDeviceAccess(actor: Actor, deviceId: string) {
   if (hasFullAccess(actor)) return;

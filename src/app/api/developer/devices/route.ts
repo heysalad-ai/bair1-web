@@ -1,3 +1,4 @@
+import { ConditionalCheckFailedException } from "@aws-sdk/client-dynamodb";
 import { requireAuth } from "@/lib/auth";
 import {
   createDevice,
@@ -48,7 +49,12 @@ export async function POST(request: Request) {
     createdAt: new Date().toISOString(),
   };
 
-  await createDevice(device);
+  try {
+    await createDevice(device, true);
+  } catch (error) {
+    if (error instanceof ConditionalCheckFailedException) return Response.json({ error: "device already registered" }, { status: 409 });
+    throw error;
+  }
   return Response.json({ ok: true, device });
 }
 

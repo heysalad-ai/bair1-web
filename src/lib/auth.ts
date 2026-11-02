@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { getUser, getUserByEmail, migrateUserId, upsertUser, type User, type Role } from "./users";
 
 const AUTH0_DOMAIN = process.env.NEXT_PUBLIC_AUTH0_DOMAIN!;
@@ -7,6 +8,7 @@ interface Auth0TokenPayload {
   email?: string;
   name?: string;
   picture?: string;
+  emailVerified?: boolean;
 }
 
 export async function verifyAuth0Token(
@@ -18,8 +20,10 @@ export async function verifyAuth0Token(
     });
     if (!res.ok) return null;
     const data = await res.json();
+    if (typeof data.sub !== "string" || !data.sub) return null;
     return {
       sub: data.sub,
+      emailVerified: data.email_verified === true,
       email: data.email,
       name: data.name ?? data.nickname,
       picture: data.picture,
@@ -39,7 +43,7 @@ export async function getOrCreateUser(
   if (existing) return existing;
 
   // Check if a pre-seeded record exists by email (e.g. bootstrap)
-  if (payload.email) {
+  if (payload.email && payload.emailVerified) {
     const byEmail = await getUserByEmail(payload.email);
     if (byEmail && byEmail.userId !== payload.sub) {
       await migrateUserId(byEmail.userId, payload.sub, {
@@ -56,7 +60,7 @@ export async function getOrCreateUser(
     email: payload.email ?? "",
     name: payload.name ?? "",
     role: "user",
-    orgId: "default",
+    orgId: `personal:${createHash("sha256").update(payload.sub).digest("hex").slice(0, 24)}`,
     createdAt: new Date().toISOString(),
   };
   await upsertUser(newUser);

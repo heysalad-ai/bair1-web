@@ -2,7 +2,8 @@ import { convertToModelMessages, streamText, stepCountIs } from "ai";
 import { openai } from "@ai-sdk/openai";
 import { z } from "zod";
 import { getLatestReading, getReadingsInRange } from "@/lib/dynamo";
-import { getAllDevicesRegistry } from "@/lib/devices";
+import { requireAuth } from "@/lib/auth";
+import { accessibleDevice, accessibleDevices } from "@/lib/device-access";
 import { getAirQuality, getWeather, getPollenForecast } from "@/lib/google-env";
 import { GPT_5_6_MODEL } from "@/lib/openai";
 import { getPublicFeedSnapshot } from "@/lib/public-feeds";
@@ -65,6 +66,9 @@ function forecastPm25(readings: ParticulateReading[]) {
 }
 
 export async function POST(req: Request) {
+  const auth = await requireAuth(req);
+  if (auth instanceof Response) return auth;
+  const actor = { kind: "user" as const, user: auth.user };
   const { messages, feedContext } = await req.json();
   const pageContext = typeof feedContext === "string" ? feedContext.slice(0, 1_000) : "";
   const modelMessages = await convertToModelMessages(messages);
@@ -92,6 +96,7 @@ Always cite whether data comes from "your sensor", "LAQN", or "Google Air Qualit
           deviceId: z.string().describe("The sensor device ID"),
         }),
         execute: async ({ deviceId }: { deviceId: string }) => {
+          if (!await accessibleDevice(actor, deviceId)) return { error: "device not found" };
           const reading = await getLatestReading(deviceId);
           if (!reading) return { error: "No data for this device" };
           return reading;
@@ -104,6 +109,8 @@ Always cite whether data comes from "your sensor", "LAQN", or "Google Air Qualit
           hoursBack: z.number().default(24).describe("How many hours of history to fetch"),
         }),
         execute: async ({ deviceId, hoursBack }: { deviceId: string; hoursBack: number }) => {
+          if (!await accessibleDevice(actor, deviceId)) return { error: "device not found" };
+          hoursBack = Math.max(1, Math.min(24, hoursBack));
           const to = new Date().toISOString();
           const from = new Date(Date.now() - hoursBack * 3600000).toISOString();
           const readings = await getReadingsInRange(deviceId, from, to);
@@ -165,14 +172,11 @@ Always cite whether data comes from "your sensor", "LAQN", or "Google Air Qualit
         description: "List all registered sensor devices",
         inputSchema: z.object({}),
         execute: async () => {
-          const devices = await getAllDevicesRegistry();
+          const devices = await accessibleDevices(actor);
           return devices.map((d) => ({
             deviceId: d.deviceId,
             name: d.name,
-            location: d.location,
             status: d.status,
-            lat: d.lat,
-            lng: d.lng,
           }));
         },
       },

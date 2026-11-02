@@ -1,11 +1,14 @@
 import { NextResponse } from "next/server";
-import { getLatestReadings } from "@/lib/dynamo";
+import { PUBLIC_FEEDS } from "@/lib/public-feeds";
+import { getLatestReading } from "@/lib/dynamo";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
-    const reading = (await getLatestReadings(1))[0];
+    const ids = [...new Set(Object.values(PUBLIC_FEEDS).flatMap(feed => feed.devices.map(device => device.deviceId)))];
+    const readings = await Promise.all(ids.map(id => getLatestReading(id)));
+    const reading = readings.filter(item => item !== null).sort((a, b) => b.timestamp.localeCompare(a.timestamp))[0];
     if (!reading) {
       return NextResponse.json({ error: "no readings" }, { status: 404 });
     }

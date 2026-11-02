@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { extractApiKeyFromHeaders, validateApiKey } from "@/lib/api-keys";
+import { requireApiDevice } from "@/lib/device-access";
 import { pollCommands } from "@/lib/dynamo";
 
 export const dynamic = "force-dynamic";
@@ -9,15 +9,9 @@ export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ deviceId: string }> }
 ) {
-  const principal = await validateApiKey(
-    extractApiKeyFromHeaders(req.headers),
-    ["read:devices"],
-  );
-  if (!principal) {
-    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  }
-
   const { deviceId } = await params;
+  const access = await requireApiDevice(req, deviceId, ["read:devices"]);
+  if (access instanceof Response) return access;
   if (!deviceId) {
     return NextResponse.json({ error: "deviceId is required" }, { status: 400 });
   }
