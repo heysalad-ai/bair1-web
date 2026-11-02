@@ -207,3 +207,9 @@ test('New personal users do not inherit history or roles through either verified
     assert.ok(saved.orgId.startsWith('personal:')); assert.equal(saved.role, 'user'); assert.equal(emailLookups, 0);
   }
 });
+await probe('An owner cannot move retained device history into another workspace without a migration', '', async()=>{
+ rows.set(deviceA.deviceId,{...deviceA,orgId:'workspace:'+randomUUID()});
+ const route=load('src/app/api/developer/devices/route.ts');
+ const response=await route.PATCH(request('PATCH',{deviceId:deviceA.deviceId,workspaceId:'workspace:'+randomUUID(),visibility:'workspace'}));
+ assert.equal(response.status,409);assert.match((await response.json()).error,/history migration/);
+});

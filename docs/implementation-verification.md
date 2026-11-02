@@ -22,9 +22,9 @@ Review in that order. Do not merge the final branch alone without its dependenci
 | Hosted acceptance | Not run. Requires approved isolated resources/configuration and two independent identities |
 | Production / hardware | Unchanged; current main and production deployment independently checked |
 
-Final local suite: 31 offline tests, 12 database access/budget/index/race tests,
+Final local suite: 32 offline tests, 12 database access/budget/index/race tests,
 12 HTTP/database ingestion tests, one restore regression and 13 production-build
-HTTP checks (69), plus the actual native firmware assertions. GitHub CI checks
+HTTP checks (70), plus the actual native firmware assertions. GitHub CI checks
 build/lint/types/runtime audit, offline tests, production HTTP guards, database,
 firmware and secrets. Preview hosting intentionally fails until an isolated
 BAIR1_TABLE_PREFIX is configured. Do not remove the guard to make preview green.

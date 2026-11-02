@@ -60,7 +60,7 @@ invitations/enrollment, expiry, key binding, stale key-index revocation and owne
 races. Acknowledge commands only in the synthetic test harness; do not connect a
 physical sensor. Paid AI/voice/environment paths must fail before providers, while
 local fake-provider tests exercise allowed data selection. Verify desktop/mobile
-states through real Auth0 sessions. Staging secrets and disposable records stay
+states through real Auth0 sessions. First assignment to a workspace explicitly shares retained owner history when workspace visibility is selected. Later moves between workspaces are blocked pending a reviewed migration; old customer history must not follow a reassignment silently. Staging secrets and disposable records stay
 within the isolated namespace.
 
 Before production, resolve the CodeQL API-token hash classification without rule
