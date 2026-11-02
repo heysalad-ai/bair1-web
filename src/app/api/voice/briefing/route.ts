@@ -5,7 +5,6 @@ import { withDeviceRead, accessibleDevice } from "@/lib/device-access";
 import { NextRequest, NextResponse } from "next/server";
 import { getLatestReading } from "@/lib/dynamo";
 import { getAirQuality, getWeather, getPollenForecast } from "@/lib/google-env";
-import { getAqiState } from "@/lib/aqi";
 
 const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY || "";
 const VOICE_ID = "21m00Tcm4TlvDq8ikWAM"; // Rachel
@@ -14,8 +13,11 @@ export async function GET(req: NextRequest) {
   const auth = await requireAuth(req);
   if (auth instanceof Response) return auth;
   const deviceId = req.nextUrl.searchParams.get("deviceId");
-  const lat = parseFloat(req.nextUrl.searchParams.get("lat") ?? "51.4775");
-  const lng = parseFloat(req.nextUrl.searchParams.get("lng") ?? "0.0656");
+  const rawLat = req.nextUrl.searchParams.get("lat"),
+    rawLng = req.nextUrl.searchParams.get("lng");
+  const hasLocation = rawLat !== null || rawLng !== null;
+  const lat = Number.parseFloat(rawLat ?? ""),
+    lng = Number.parseFloat(rawLng ?? "");
 
   if (
     deviceId &&
@@ -24,7 +26,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "device not found" }, { status: 404 });
   }
 
-  if (!validCoordinates(lat, lng))
+  if (hasLocation && !validCoordinates(lat, lng))
     return NextResponse.json(
       { error: "Valid coordinates required" },
       { status: 400 },
@@ -43,9 +45,9 @@ export async function GET(req: NextRequest) {
   }
   // Gather external context only after the authorized measurement is available.
   const [googleAq, weather, pollen] = await Promise.all([
-    getAirQuality({ lat, lng }),
-    getWeather({ lat, lng }),
-    getPollenForecast({ lat, lng }, 1),
+    hasLocation ? getAirQuality({ lat, lng }) : Promise.resolve(null),
+    hasLocation ? getWeather({ lat, lng }) : Promise.resolve(null),
+    hasLocation ? getPollenForecast({ lat, lng }, 1) : Promise.resolve([]),
   ]);
 
   // Build briefing text
@@ -56,16 +58,26 @@ export async function GET(req: NextRequest) {
   parts.push(`${greeting}. Here's your air quality briefing.`);
 
   if (sensorReading?.aqi != null) {
-    const state = getAqiState(sensorReading.aqi);
     parts.push(
-      `Your sensor is reading an AQI of ${sensorReading.aqi}, which is ${state.level}. ${state.guidance[0]}.`,
+      `Your device last reported an AQI of ${sensorReading.aqi}. Its calibration is unverified.`,
     );
   }
+  if (sensorReading?.temperature != null)
+    parts.push(
+      `The last recorded device temperature was ${sensorReading.temperature} degrees Celsius.`,
+    );
+  if (sensorReading?.capturedAt)
+    parts.push(`Device capture time: ${sensorReading.capturedAt}.`);
+  else if (sensorReading) parts.push("Device capture time is unknown.");
+  if (!hasLocation)
+    parts.push(
+      "Environmental context is unavailable because no location was provided.",
+    );
 
   const googleAqi = googleAq?.indexes?.[0];
   if (googleAqi) {
     parts.push(
-      `The Google Air Quality index for your area is ${googleAqi.aqi}, rated ${googleAqi.category}.`,
+      `The Google Air Quality index for the provided location is ${googleAqi.aqi}, rated ${googleAqi.category}.`,
     );
   }
 

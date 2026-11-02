@@ -213,3 +213,12 @@ await probe('An owner cannot move retained device history into another workspace
  const response=await route.PATCH(request('PATCH',{deviceId:deviceA.deviceId,workspaceId:'workspace:'+randomUUID(),visibility:'workspace'}));
  assert.equal(response.status,409);assert.match((await response.json()).error,/history migration/);
 });
+await probe('Voice with no device location never invents environmental context from a default coordinate', '', async()=>{
+ const previous=process.env.ELEVENLABS_API_KEY;process.env.ELEVENLABS_API_KEY='';let providerCalls=0;
+ try{
+  const unexpected=async()=>{providerCalls++;throw new Error('No location was supplied');};
+  const route=load('src/app/api/voice/briefing/route.ts',{'@/lib/google-env':{getAirQuality:unexpected,getWeather:unexpected,getPollenForecast:unexpected}});
+  const response=await route.GET(new (require('next/server.js').NextRequest)(`https://synthetic.invalid/api/voice/briefing?deviceId=${deviceA.deviceId}`,{headers:{authorization:'Bearer synthetic-session'}}));
+  assert.equal(response.status,200);assert.equal(providerCalls,0);assert.equal((await response.json()).audio,null);
+ }finally{if(previous===undefined)delete process.env.ELEVENLABS_API_KEY;else process.env.ELEVENLABS_API_KEY=previous;}
+});
