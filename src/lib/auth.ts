@@ -1,5 +1,6 @@
+import { ConditionalCheckFailedException } from "@aws-sdk/client-dynamodb";
 import { createHash } from "node:crypto";
-import { getUser, getUserByEmail, migrateUserId, upsertUser, type User, type Role } from "./users";
+import { getUser, upsertUser, type User, type Role } from "./users";
 
 const AUTH0_DOMAIN = process.env.NEXT_PUBLIC_AUTH0_DOMAIN!;
 
@@ -12,7 +13,7 @@ interface Auth0TokenPayload {
 }
 
 export async function verifyAuth0Token(
-  token: string
+  token: string,
 ): Promise<Auth0TokenPayload | null> {
   try {
     const res = await fetch(`https://${AUTH0_DOMAIN}/userinfo`, {
@@ -33,26 +34,14 @@ export async function verifyAuth0Token(
   }
 }
 
-export async function getOrCreateUser(
-  token: string
-): Promise<User | null> {
+export async function getOrCreateUser(token: string): Promise<User | null> {
   const payload = await verifyAuth0Token(token);
   if (!payload) return null;
 
   const existing = await getUser(payload.sub);
   if (existing) return existing;
 
-  // Check if a pre-seeded record exists by email (e.g. bootstrap)
-  if (payload.email && payload.emailVerified) {
-    const byEmail = await getUserByEmail(payload.email);
-    if (byEmail && byEmail.userId !== payload.sub) {
-      await migrateUserId(byEmail.userId, payload.sub, {
-        email: payload.email,
-        name: payload.name ?? byEmail.name,
-      });
-      return getUser(payload.sub);
-    }
-  }
+  // Identity is the verified issuer subject. Email alone never transfers roles or history.
 
   // Auto-provision new user with "user" role
   const newUser: User = {
@@ -63,7 +52,13 @@ export async function getOrCreateUser(
     orgId: `personal:${createHash("sha256").update(payload.sub).digest("hex").slice(0, 24)}`,
     createdAt: new Date().toISOString(),
   };
-  await upsertUser(newUser);
+  try {
+    await upsertUser(newUser, true);
+  } catch (error) {
+    if (error instanceof ConditionalCheckFailedException)
+      return getUser(payload.sub);
+    throw error;
+  }
   return newUser;
 }
 
@@ -74,7 +69,7 @@ export function extractToken(request: Request): string | null {
 }
 
 export async function requireAuth(
-  request: Request
+  request: Request,
 ): Promise<{ user: User } | Response> {
   const token = extractToken(request);
   if (!token) {
@@ -89,7 +84,7 @@ export async function requireAuth(
 
 export async function requireRole(
   request: Request,
-  roles: Role[]
+  roles: Role[],
 ): Promise<{ user: User } | Response> {
   const result = await requireAuth(request);
   if (result instanceof Response) return result;

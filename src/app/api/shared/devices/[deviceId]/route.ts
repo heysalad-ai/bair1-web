@@ -9,11 +9,11 @@ export async function GET(
   { params }: { params: Promise<{ deviceId: string }> },
 ) {
   const { deviceId } = await params;
-  if (!verifyDeviceShareToken(deviceId, req.nextUrl.searchParams.get("token"))) {
+  if (!await verifyDeviceShareToken(deviceId, req.nextUrl.searchParams.get("token"))) {
     return Response.json({ error: "share link not found" }, { status: 404 });
   }
   const snapshot = await getSharedDeviceSnapshot(deviceId);
-  if (!snapshot) return Response.json({ error: "device not found" }, { status: 404 });
+  if (!snapshot || !await verifyDeviceShareToken(deviceId, req.nextUrl.searchParams.get("token"))) return Response.json({ error: "device not found" }, { status: 404 });
   return Response.json(snapshot, {
     headers: { "Cache-Control": "private, no-store" },
   });

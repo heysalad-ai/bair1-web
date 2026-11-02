@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import ts from 'typescript';
+import * as crypto from 'node:crypto';
 import { createLoader } from './helpers/load-ts.mjs';
 const ingestion = createLoader({'./aws-dynamo': {dynamoClient: {send: () => {throw new Error('Unexpected unit-test network request');}}}})('src/lib/reading-ingestion.ts');
 
@@ -14,6 +15,9 @@ function load(file, mocks = {}, env = {}) {
   const loaded = { exports: {} };
   new Function('require', 'module', 'exports', 'process', code)(
     (name) => {
+      if (name === "node:crypto") return crypto;
+      if (name === "./registry-condition") return { registryCondition: () => { throw new Error("Unexpected command write"); } };
+      if (name === "./measurement-contract") return load("src/lib/measurement-contract.ts", {}, env);
       if (name === "@/lib/storage-config" || name === "./storage-config") return load("src/lib/storage-config.ts", {}, env);
       if (!(name in mocks)) throw new Error(`Unexpected dependency: ${name}`);
       return mocks[name];
@@ -32,6 +36,8 @@ test('PM-only uploads preserve PM and leave AQI unavailable; explicit zero stays
     '@/lib/api-keys': { extractApiKeyFromHeaders: () => null, validateApiKey: async () => ({ type: 'system' }) },
     '@/lib/dynamo': { storeReading: async (value) => { stored = value; return {outcome:'stored',timestamp:new Date().toISOString(),capturedAt:null,receivedAt:new Date().toISOString(),clockQuality:'unknown'}; } },
     '@/lib/geolocation': {},
+    '@/lib/usage-budget': { usageGate: async () => { throw new Error('Unexpected geolocation reservation'); } },
+    '@/lib/device-access': {},
     '@/lib/devices': { getDevice: async () => ({}), updateDevice: async () => {} },
   });
   for (const aqi of [undefined, null, 0, 57]) {
@@ -65,6 +71,7 @@ test('Dynamo omits missing AQI and round-trips it as null, not zero', async () =
   class Command { constructor(input) { this.input = input; } }
   class PutItemCommand extends Command {}
   const db = load('src/lib/dynamo.ts', {
+    './devices': { getDevice: async () => null, getAllDevicesRegistry: async () => [] },
     '@aws-sdk/client-dynamodb': { PutItemCommand, QueryCommand: Command, ScanCommand: Command },
     './reading-ingestion': { persistReading: async (value) => {item={...value,timestamp:{S:new Date().toISOString()}}; return {outcome:'stored'};} },
     './aws-dynamo': { dynamoClient: { send: async (command) => {

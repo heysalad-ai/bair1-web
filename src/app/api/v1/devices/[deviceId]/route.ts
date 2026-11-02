@@ -1,5 +1,6 @@
+import { withDeviceRead, DeviceAccessChanged } from "@/lib/device-access";
 import { NextRequest, NextResponse } from "next/server";
-import { getDevice } from "@/lib/devices";
+import { accessibleDevice } from "@/lib/device-access";
 import { getLatestReading } from "@/lib/dynamo";
 import { extractApiKeyFromHeaders, validateApiKey } from "@/lib/api-keys";
 
@@ -7,11 +8,11 @@ export const dynamic = "force-dynamic";
 
 export async function GET(
   req: NextRequest,
-  { params }: { params: Promise<{ deviceId: string }> }
+  { params }: { params: Promise<{ deviceId: string }> },
 ) {
   const principal = await validateApiKey(
     extractApiKeyFromHeaders(req.headers),
-    ["read:devices"]
+    ["read:devices"],
   );
   if (!principal) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
@@ -21,18 +22,28 @@ export async function GET(
     const { deviceId } = await params;
 
     if (!deviceId) {
-      return NextResponse.json({ error: "deviceId is required" }, { status: 400 });
+      return NextResponse.json(
+        { error: "deviceId is required" },
+        { status: 400 },
+      );
     }
 
-    const device = await getDevice(deviceId);
+    const device = await accessibleDevice(
+      { kind: "api-key", principal },
+      deviceId,
+    );
     if (!device) {
       return NextResponse.json({ error: "device not found" }, { status: 404 });
     }
-    if (principal.type === "developer" && device.ownerId !== principal.userId) {
+    if (!device) {
       return NextResponse.json({ error: "device not found" }, { status: 404 });
     }
 
-    const latestReading = await getLatestReading(deviceId);
+    const latestReading = await withDeviceRead(
+      { kind: "api-key", principal },
+      deviceId,
+      () => getLatestReading(deviceId),
+    );
 
     return NextResponse.json({
       data: {
@@ -41,6 +52,8 @@ export async function GET(
       },
     });
   } catch (err: unknown) {
+    if (err instanceof DeviceAccessChanged)
+      return NextResponse.json({ error: "device not found" }, { status: 404 });
     const message = err instanceof Error ? err.message : "unknown error";
     console.error("[api/v1/devices/[deviceId]] GET error:", message);
     return NextResponse.json({ error: message }, { status: 500 });

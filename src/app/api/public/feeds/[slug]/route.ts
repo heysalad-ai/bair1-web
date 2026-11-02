@@ -43,6 +43,7 @@ export async function GET(
       },
     });
   } catch (err: unknown) {
+    if (err instanceof RangeError) return NextResponse.json({ error: err.message }, { status: 400 });
     const message = err instanceof Error ? err.message : "unknown error";
     return NextResponse.json({ error: message }, { status: 500 });
   }

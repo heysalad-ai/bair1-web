@@ -55,10 +55,17 @@ after(async()=>{
  client.destroy();
 });
 function sample(deviceId,sequence,time=Date.now()-60000,extra={}){return {deviceId,eventId:`${deviceId}:${sequence}`,bootSession:'local-boot',sequence,sample:sequence,capturedAt:new Date(time).toISOString(),temperature:21.5,humidity:55,pressure:1010,altitudeMeters:27,adcD3Raw:2000,adcD2Raw:1000,adcD3PinVoltage:1.5,adcD2PinVoltage:0.75,adcD3InputVoltage:3,adcD2InputVoltage:1.5,aqi:null,...extra};}
-async function post(payload,apiKey=key){const res=await fetch(origin+'/api/readings',{method:'POST',headers:{'Content-Type':'application/json',...(apiKey?{Authorization:'Bearer '+apiKey}:{})},body:JSON.stringify(payload)});return {status:res.status,body:await res.json()};}
+async function post(payload,apiKey=key){
+ if(apiKey===key && payload && typeof payload.deviceId==='string' && /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(payload.deviceId) && !await devices.getDevice(payload.deviceId)) {
+  try { await devices.createDevice({deviceId:payload.deviceId,name:'Synthetic fixture',ownerId:owner,orgId:'local',status:'active',location:'',lat:null,lng:null,createdAt:new Date().toISOString()},true); } catch(error) { if(error.name!=='ConditionalCheckFailedException')throw error; }
+ }
+ const res=await fetch(origin+'/api/readings',{method:'POST',headers:{'Content-Type':'application/json',...(apiKey?{Authorization:'Bearer '+apiKey}:{})},body:JSON.stringify(payload)});return {status:res.status,body:await res.json()};
+}
 async function rawRows(deviceId){
+ const version=(await devices.getDevice(deviceId))?.ownershipVersion;
+ const partition=version&&version!=="legacy"?`${deviceId}#${version}`:deviceId;
  const items=[];let cursor;
- do {const result=await client.send(new QueryCommand({TableName:'bair1-readings',KeyConditionExpression:'deviceId = :d',ExpressionAttributeValues:{':d':{S:deviceId}},ConsistentRead:true,ExclusiveStartKey:cursor}));items.push(...(result.Items??[]));cursor=result.LastEvaluatedKey;}while(cursor);
+ do {const result=await client.send(new QueryCommand({TableName:'bair1-readings',KeyConditionExpression:'deviceId = :d',ExpressionAttributeValues:{':d':{S:partition}},ConsistentRead:true,ExclusiveStartKey:cursor}));items.push(...(result.Items??[]));cursor=result.LastEvaluatedKey;}while(cursor);
  return items;
 }
 
@@ -155,13 +162,13 @@ test('actual native firmware payload round-trips and captures real replies for a
  writeFileSync('/tmp/bair1-firmware-replies.jsonl',[stored,duplicate,conflict].map(x=>JSON.stringify(x)).join('\n'));
 });
 
-test('concurrent auto-registration by different owners never mixes readings or replaces ownership',async()=>{
+test('concurrent uploads cannot replace pre-provisioned ownership',async()=>{
  const d=randomUUID(),p=sample(d,1);
  const result=await Promise.all([post(p,key),post(sample(d,2),otherKey)]);
  assert.deepEqual(result.map(r=>r.status).sort(),[200,404]);
  const winner=await devices.getDevice(d);
  const rows=await rawRows(d);assert.equal(rows.length,1);
- assert.equal(Number(rows[0].sample.N),winner.ownerId===owner?1:2);
+ assert.equal(winner.ownerId,owner);assert.equal(Number(rows[0].sample.N),1);
 });
 
 
@@ -186,4 +193,14 @@ test('compatible pause rollback preserves history and receipts, then resumes dup
   assert.equal((await rawRows(d)).length,2);
  }finally{delete process.env.BAIR1_INGESTION_MODE;}
  assert.equal((await post(payload)).body.outcome,'duplicate');assert.equal((await post(sample(d,2))).body.outcome,'stored');
+});
+test('Notehub environmental events preserve unknown capture time and retry by stable event ID',async()=>{
+ process.env.NOTEHUB_ROUTE_SECRET=randomUUID();process.env.NOTEHUB_DEVICE_ID_SALT=randomUUID();
+ try{
+  const payload={event:randomUUID(),device:randomUUID(),received:Math.floor(Date.now()/1000)-3600,file:'environment.qo',body:{temperature:21,humidity:50,pressurePa:101000}};
+  const send=async()=>{const response=await fetch(origin+'/api/integrations/notehub',{method:'POST',headers:{Authorization:'Bearer '+process.env.NOTEHUB_ROUTE_SECRET,'Content-Type':'application/json'},body:JSON.stringify(payload)});assert.equal(response.status,200);return response.json();};
+  const first=await send(),retry=await send();assert.equal(first.readingStored,true);assert.equal(retry.readingOutcome,'duplicate');
+  const reading=await db.getLatestReading(first.deviceId);assert.equal(reading.capturedAt,null);assert.equal(reading.clockQuality,'unknown');assert.equal(reading.aqi,null);assert.equal(reading.temperature,21);assert.equal(reading.pressure,1010);
+  const telemetry=await db.getNotecardTelemetry(first.deviceId);assert.ok(!telemetry.temperatureAt);assert.equal(telemetry.measurementAt,null);
+ }finally{delete process.env.NOTEHUB_ROUTE_SECRET;delete process.env.NOTEHUB_DEVICE_ID_SALT;}
 });

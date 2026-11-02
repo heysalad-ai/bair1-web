@@ -13,6 +13,7 @@ export type SharedDeviceSnapshot = {
     temperature: number | null;
     humidity: number | null;
     pressure: number | null;
+    pressureUnit?: string;
     batteryVoltage: number | null;
     motion: number | null;
     deviceStatus: string | null;
@@ -25,6 +26,7 @@ export type SharedDeviceSnapshot = {
     temperature: number | null;
     humidity: number | null;
     pressure: number | null;
+    pressureUnit?: string;
     batteryVoltage: number | null;
     motion: number | null;
     deviceStatus: string | null;
@@ -56,6 +58,7 @@ export async function getSharedDeviceSnapshot(deviceId: string): Promise<SharedD
       temperature: telemetry.temperature,
       humidity: telemetry.humidity,
       pressure: telemetry.pressure,
+      pressureUnit: telemetry.pressureUnit,
       batteryVoltage: telemetry.batteryVoltage,
       motion: telemetry.motion,
       deviceStatus: telemetry.deviceStatus,
@@ -68,6 +71,7 @@ export async function getSharedDeviceSnapshot(deviceId: string): Promise<SharedD
       temperature: item.temperature,
       humidity: item.humidity,
       pressure: item.pressure,
+      pressureUnit: item.pressureUnit,
       batteryVoltage: item.batteryVoltage,
       motion: item.motion,
       deviceStatus: item.deviceStatus,

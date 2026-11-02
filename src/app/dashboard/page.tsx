@@ -1,543 +1,347 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
-import Link from "next/link";
+import { useCallback, useEffect, useState } from "react";
 import { useAuth0 } from "@auth0/auth0-react";
 import Logo from "@/components/Logo";
-import AqiGauge from "@/components/AqiGauge";
-import GuidanceStrip from "@/components/GuidanceStrip";
-import EnvironmentCards from "@/components/EnvironmentCards";
 import Navigation, { type Tab, type ViewerRole } from "@/components/Navigation";
 import MapView from "@/components/MapView";
-import AnalyticsView from "@/components/AnalyticsView";
 import AIChatView from "@/components/AIChatView";
 import AdminView from "@/components/AdminView";
 import DeveloperView from "@/components/DeveloperView";
-import DataSourceBadge from "@/components/DataSourceBadge";
-import NotecardOverview, { type NotecardTelemetryPoint } from "@/components/NotecardOverview";
-import { getAqiState } from "@/lib/aqi";
+import AccessView from "@/components/AccessView";
+import {
+  MeasurementView,
+  ReadingHistory,
+  type Measurement,
+} from "@/components/MeasurementView";
+import { readingFieldNames } from "@/lib/measurement-contract";
 import { useAuthenticatedFetch } from "@/lib/use-authenticated-fetch";
 
-interface DeviceOption {
+export type DeviceOption = {
   deviceId: string;
   name: string;
-  lat?: number | null;
-  lng?: number | null;
-}
-
+  orgId: string;
+  visibility: string;
+  permissions: string[];
+  isOwner: boolean;
+  lat: number | null;
+  lng: number | null;
+};
 export default function Dashboard() {
-  const {
-    isLoading,
-    isAuthenticated,
-    error,
-    loginWithRedirect: login,
-    logout: auth0Logout,
-    user,
-  } = useAuth0();
-  const authenticatedFetch = useAuthenticatedFetch();
-
-  const signup = () =>
-    login({ authorizationParams: { screen_hint: "signup" } });
-
-  const logout = () =>
-    auth0Logout({ logoutParams: { returnTo: window.location.origin } });
-
+  const { isLoading, isAuthenticated, loginWithRedirect, logout, user } =
+    useAuth0();
+  const request = useAuthenticatedFetch();
   const [tab, setTab] = useState<Tab>("home");
-  const [aqi, setAqi] = useState<number | null>(null);
-  const [sensorId, setSensorId] = useState("64E83383EC74");
-  const [isLive, setIsLive] = useState(false);
-  const [lastUpdated, setLastUpdated] = useState(new Date());
-  const [lastUpdatedText, setLastUpdatedText] = useState("Just now");
   const [devices, setDevices] = useState<DeviceOption[]>([]);
-  const [selectedDevice, setSelectedDevice] = useState<string | null>(null);
-  const [deviceLat, setDeviceLat] = useState<number | null>(null);
-  const [deviceLng, setDeviceLng] = useState<number | null>(null);
-  const [, setGasVoltage] = useState<number | null>(null);
-  const [rssi, setRssi] = useState<number | null>(null);
-  const [airState, setAirState] = useState<string | null>(null);
-  const [uptimeMs, setUptimeMs] = useState<number | null>(null);
-  const [pm1, setPm1] = useState<number | null>(null);
-  const [pm25, setPm25] = useState<number | null>(null);
-  const [pm4, setPm4] = useState<number | null>(null);
-  const [pm10, setPm10] = useState<number | null>(null);
-  const [sensorModel, setSensorModel] = useState<string | null>(null);
-  const [board, setBoard] = useState<string | null>(null);
-  const [firmwareVersion, setFirmwareVersion] = useState<string | null>(null);
-  const [transport, setTransport] = useState<string | null>(null);
-  const [hasAirReading, setHasAirReading] = useState(false);
-  const [notecardTelemetry, setNotecardTelemetry] = useState<NotecardTelemetryPoint | null>(null);
-  const [notecardHistory, setNotecardHistory] = useState<NotecardTelemetryPoint[]>([]);
-  const [viewerRole, setViewerRole] = useState<ViewerRole>("user");
-
-  const aqiState = getAqiState(aqi);
-
-  // Fetch registered devices
-  useEffect(() => {
-    if (!isAuthenticated) return;
-    async function fetchDevices() {
-      try {
-        const query = `{
-          viewer { role }
-          registeredDevices { deviceId name status lat lng }
-          activeDeviceIds
-        }`;
-        const res = await authenticatedFetch("/api/graphql", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ query }),
-        });
-        if (!res.ok) return;
-        const json = await res.json();
-        const role = json.data?.viewer?.role;
-        if (role === "user" || role === "admin" || role === "super_admin") {
-          setViewerRole(role);
-        }
-        const registered = json.data?.registeredDevices ?? [];
-        const activeIds: string[] = json.data?.activeDeviceIds ?? [];
-
-        const deviceMap = new Map<string, DeviceOption>();
-        for (const d of registered) {
-          deviceMap.set(d.deviceId, { deviceId: d.deviceId, name: d.name, lat: d.lat, lng: d.lng });
-        }
-        for (const id of activeIds) {
-          if (!deviceMap.has(id)) {
-            deviceMap.set(id, { deviceId: id, name: `Sensor ${id.slice(-4)}` });
-          }
-        }
-
-        const list = Array.from(deviceMap.values());
-        setDevices(list);
-        if (list.length > 0 && !selectedDevice) {
-          setSelectedDevice(list[0].deviceId);
-          if (list[0].lat) setDeviceLat(list[0].lat);
-          if (list[0].lng) setDeviceLng(list[0].lng);
-        }
-      } catch {}
-    }
-    fetchDevices();
-  }, [authenticatedFetch, isAuthenticated, selectedDevice]);
-
-  // Fetch live data
-  const fetchLive = useCallback(async () => {
-    const deviceId = selectedDevice;
-    if (!deviceId) return;
-
+  const [selected, setSelected] = useState("");
+  const [workspaces, setWorkspaces] = useState<Record<string, string>>({});
+  const [snapshotDenied, setSnapshotDenied] = useState(false);
+  const [role, setRole] = useState<ViewerRole>("user");
+  const [state, setState] = useState<"loading" | "ready" | "error">("loading");
+  const [error, setError] = useState("");
+  const [snapshot, setSnapshot] = useState<{
+    deviceId: string;
+    reading: Measurement | null;
+    telemetry: Measurement | null;
+  } | null>(null);
+  const [snapshotError, setSnapshotError] = useState("");
+  const loadDevices = useCallback(async () => {
+    setState("loading");
+    setError("");
     try {
-      const query = `{
-        latestReading(deviceId: "${deviceId}") {
-          deviceId timestamp aqi gasVoltage rssi airState uptimeMs
-          pm1 pm25 pm4 pm10 sensorModel board firmwareVersion transport
-        }
-        notecardTelemetry(deviceId: "${deviceId}") {
-          capturedAt receivedAt temperature humidity pressure batteryVoltage motion
-          deviceStatus transport locationAvailable locationSource sourceFile updatedAt
-        }
-        notecardTelemetryHistory(deviceId: "${deviceId}", limit: 120) {
-          capturedAt receivedAt temperature humidity pressure batteryVoltage motion
-          deviceStatus transport locationAvailable locationSource sourceFile updatedAt
-        }
-      }`;
-      const res = await authenticatedFetch("/api/graphql", {
+      const response = await request("/api/graphql", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query }),
+        body: JSON.stringify({
+          query:
+            "{ viewer { role } registeredDevices { deviceId name orgId visibility isOwner permissions lat lng } }",
+        }),
       });
-      if (!res.ok) throw new Error("API unavailable");
-      const json = await res.json();
-      const reading = json.data?.latestReading;
-      const telemetry = json.data?.notecardTelemetry as NotecardTelemetryPoint | null;
-      setNotecardTelemetry(telemetry);
-      setNotecardHistory(json.data?.notecardTelemetryHistory ?? []);
-      if (reading?.aqi !== undefined) {
-        setHasAirReading(true);
-        setAqi(reading.aqi);
-        setSensorId(reading.deviceId);
-        setGasVoltage(reading.gasVoltage);
-        setRssi(reading.rssi);
-        setAirState(reading.airState);
-        setUptimeMs(reading.uptimeMs);
-        setPm1(reading.pm1);
-        setPm25(reading.pm25);
-        setPm4(reading.pm4);
-        setPm10(reading.pm10);
-        setSensorModel(reading.sensorModel);
-        setBoard(reading.board);
-        setFirmwareVersion(reading.firmwareVersion);
-        setTransport(reading.transport);
-        setLastUpdated(new Date(reading.timestamp));
-        setIsLive(true);
-        setLastUpdatedText("Just now");
-        return;
+      const result = await response.json();
+      if (!response.ok || result.errors)
+        throw new Error(
+          response.status === 401
+            ? "Your session expired. Please sign in again."
+            : "Devices could not be loaded. Try again.",
+        );
+      try {
+        const workspaceResponse = await request("/api/workspaces");
+        if (workspaceResponse.ok) {
+          const data = await workspaceResponse.json();
+          setWorkspaces(
+            Object.fromEntries(
+              (data.workspaces ?? []).map(
+                (workspace: { workspaceId: string; name: string }) => [
+                  workspace.workspaceId,
+                  workspace.name,
+                ],
+              ),
+            ),
+          );
+        }
+      } catch {
+        setWorkspaces({});
       }
-      if (telemetry) {
-        setHasAirReading(false);
-        setSensorId(deviceId);
-        setPm1(null);
-        setPm25(null);
-        setPm4(null);
-        setPm10(null);
-        setTransport("notehub");
-        const observedAt = new Date(telemetry.receivedAt || telemetry.capturedAt);
-        const ageMinutes = Math.max(0, Math.floor((Date.now() - observedAt.getTime()) / 60000));
-        setLastUpdated(observedAt);
-        setLastUpdatedText(ageMinutes < 1 ? "Just now" : `${ageMinutes}m ago`);
-        setIsLive(ageMinutes < 90);
-        return;
-      }
-      throw new Error("No reading");
-    } catch {
-      setHasAirReading(false);
-      setNotecardTelemetry(null);
-      setNotecardHistory([]);
-      setIsLive(false);
+      const list = result.data.registeredDevices as DeviceOption[];
+      setDevices(list);
+      setRole(result.data.viewer.role);
+      setSelected((current) =>
+        list.some((d) => d.deviceId === current)
+          ? current
+          : (list[0]?.deviceId ?? ""),
+      );
+      setState("ready");
+    } catch (e) {
+      setDevices([]);
+      setSelected("");
+      setState("error");
+      setError(e instanceof Error ? e.message : "Devices unavailable");
     }
-  }, [authenticatedFetch, selectedDevice]);
-
+  }, [request]);
   useEffect(() => {
-    const timer = window.setTimeout(() => {
-      void fetchLive();
+    if (isAuthenticated) {
+      const timer = setTimeout(() => void loadDevices(), 0);
+      return () => clearTimeout(timer);
+    }
+  }, [isAuthenticated, loadDevices]);
+  useEffect(() => {
+    if (!selected || !isAuthenticated) return;
+    const controller = new AbortController();
+    let active = true;
+    async function refresh() {
+      try {
+        const response = await request("/api/graphql", {
+          signal: controller.signal,
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            query: `query Snapshot($id: String!) { latestReading(deviceId: $id) { ${readingFieldNames.join(" ")} } notecardTelemetry(deviceId: $id) { capturedAt receivedAt temperature humidity pressure pressureUnit batteryVoltage motion temperatureAt humidityAt pressureAt batteryVoltageAt motionAt measurementAt sourceFile transport } }`,
+            variables: { id: selected },
+          }),
+        });
+        const result = await response.json();
+        if (!response.ok || result.errors) {
+          const denied =
+            [401, 403, 404].includes(response.status) ||
+            result.errors?.some((error: { extensions?: { code?: string } }) =>
+              ["NOT_FOUND", "UNAUTHENTICATED", "FORBIDDEN"].includes(
+                error.extensions?.code ?? "",
+              ),
+            );
+          if (active) {
+            setSnapshot(null);
+            setSnapshotDenied(Boolean(denied));
+            setSnapshotError(
+              denied
+                ? "Your session or device access changed. Refresh your devices or sign in again."
+                : "Measurements are temporarily unavailable. Please try again.",
+            );
+          }
+          return;
+        }
+        if (active) {
+          setSnapshot({
+            deviceId: selected,
+            reading: result.data.latestReading,
+            telemetry: result.data.notecardTelemetry,
+          });
+          setSnapshotError("");
+        }
+      } catch (e) {
+        if (active) {
+          setSnapshot(null);
+          setSnapshotDenied(false);
+          setSnapshotError(
+            e instanceof Error ? e.message : "Measurements unavailable",
+          );
+        }
+      }
+    }
+    const timer = setTimeout(() => {
+      setSnapshotError("");
+      void refresh();
     }, 0);
-    const interval = setInterval(fetchLive, 60000);
+    const interval = setInterval(refresh, 60000);
     return () => {
-      window.clearTimeout(timer);
+      active = false;
+      controller.abort();
+      clearTimeout(timer);
       clearInterval(interval);
     };
-  }, [fetchLive]);
-
-  // Update device location when selection changes
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
-      const dev = devices.find((d) => d.deviceId === selectedDevice);
-      if (dev?.lat) setDeviceLat(dev.lat);
-      if (dev?.lng) setDeviceLng(dev.lng);
-    }, 0);
-    return () => window.clearTimeout(timer);
-  }, [selectedDevice, devices]);
-
-  // Last updated text
-  useEffect(() => {
-    const tick = setInterval(() => {
-      const secs = Math.floor((Date.now() - lastUpdated.getTime()) / 1000);
-      if (secs < 60) setLastUpdatedText("Just now");
-      else setLastUpdatedText(`${Math.floor(secs / 60)}m ago`);
-    }, 10000);
-    return () => clearInterval(tick);
-  }, [lastUpdated]);
-
-  if (isLoading) {
+  }, [selected, isAuthenticated, request]);
+  const device = devices.find((d) => d.deviceId === selected);
+  const current = snapshot?.deviceId === selected ? snapshot : null;
+  if (isLoading)
     return (
-      <main className="flex-1 flex items-center justify-center">
-        <div className="text-center">
-          <Logo />
-          <p className="text-sm text-muted mt-4">Loading...</p>
-        </div>
+      <main className="m-auto p-8" role="status">
+        Loading your account…
       </main>
     );
-  }
-
-  if (!isAuthenticated) {
+  if (!isAuthenticated)
     return (
-      <main className="flex-1 flex items-center justify-center px-4">
-        <div className="text-center max-w-sm">
-          <Logo />
-          <h1 className="text-2xl font-bold text-ink mt-6 mb-2">Your AI Air Bear</h1>
-          <p className="text-sm text-muted mb-8">
-            Sign in to meet your bear. Real-time air quality, honestly delivered.
-          </p>
-          {error && <p className="text-sm text-red-400 mb-4">Error: {error.message}</p>}
-          <div className="flex flex-col gap-3">
-            <button
-              onClick={() => login()}
-              className="bg-primary text-white font-semibold px-6 py-3 rounded-lg hover:bg-primary-hover transition-colors text-sm"
-            >
-              Log in
-            </button>
-            <button
-              onClick={signup}
-              className="border border-border text-ink font-semibold px-6 py-3 rounded-lg hover:bg-surface transition-colors text-sm"
-            >
-              Sign up
-            </button>
-          </div>
-        </div>
+      <main className="m-auto max-w-md p-8">
+        <Logo />
+        <h1 className="mt-8 text-3xl font-semibold">Your devices, your data</h1>
+        <p className="my-5 text-muted">
+          Sign in to view your measurements and manage access.
+        </p>
+        <button className="access-button" onClick={() => loginWithRedirect()}>
+          Sign in
+        </button>
       </main>
     );
-  }
-
-  const activeDeviceName = devices.find((d) => d.deviceId === selectedDevice)?.name ?? "No device selected";
-  const isAdmin = viewerRole === "admin" || viewerRole === "super_admin";
-
   return (
-    <main className="flex-1 flex flex-col lg:min-h-screen lg:bg-bg lg:pl-64">
-      <header className="sticky top-0 z-40 border-b border-border bg-bg/85 backdrop-blur-lg">
-        <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3 lg:max-w-none lg:px-8 lg:py-4">
-          <Link href="/" className="lg:hidden"><Logo /></Link>
-          <div className="hidden lg:block">
-            <div className="text-sm font-medium text-ink/90">{activeDeviceName}</div>
-            <div className="text-xs text-muted/60">{lastUpdatedText}</div>
-          </div>
-          <div className="flex items-center gap-3">
-            <div className="relative">
-              <select
-                value={selectedDevice ?? ""}
-                onChange={(e) => setSelectedDevice(e.target.value)}
-                className="h-8 w-[200px] appearance-none rounded-lg border border-border bg-surface/70 px-3 pr-8 text-xs font-medium text-ink/85 outline-none transition-colors hover:border-primary/30 focus:border-primary/50 focus:bg-surface lg:h-9 lg:w-[280px]"
-              >
-                {devices.map((d) => (
-                  <option key={d.deviceId} value={d.deviceId}>
-                    {d.name} ({d.deviceId.slice(-4)})
-                  </option>
-                ))}
-              </select>
-              <svg
-                aria-hidden="true"
-                className="pointer-events-none absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted/60"
-                viewBox="0 0 20 20"
-                fill="currentColor"
-              >
-                <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.17l3.71-3.94a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clipRule="evenodd" />
-              </svg>
-            </div>
-            <div className="text-right">
-              <div className="text-xs font-medium text-ink/70">{user?.name ?? "Bair1"}</div>
-              <div className="text-[10px] text-muted/60">
-                <span className="hidden lg:inline">{isAdmin ? "Workspace admin" : "Workspace member"}</span>
-                <span className="lg:hidden">{lastUpdatedText}</span>
-              </div>
-            </div>
-            <button
-              onClick={logout}
-              className="text-[10px] text-muted/60 hover:text-ink/70 transition-colors"
+    <main className="min-h-screen flex-1 lg:pl-64">
+      <header className="border-b border-border px-5 py-4 lg:px-10">
+        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4">
+          <label className="min-w-0 text-xs text-muted">
+            Selected device
+            <select
+              aria-label="Selected device"
+              disabled={!devices.length}
+              value={selected}
+              onChange={(e) => {
+                setSelected(e.target.value);
+                setSnapshot(null);
+                setSnapshotError("");
+              }}
+              className="access-input max-w-[70vw] text-sm"
             >
-              Log out
+              {!devices.length && <option value="">No devices</option>}
+              {devices.map((d) => (
+                <option key={d.deviceId} value={d.deviceId}>
+                  {d.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="text-sm">
+            <span>{user?.name}</span>
+            <button
+              className="ml-4 underline underline-offset-4"
+              onClick={() =>
+                logout({ logoutParams: { returnTo: window.location.origin } })
+              }
+            >
+              Sign out
             </button>
           </div>
         </div>
       </header>
-
-      <div className="mx-auto w-full max-w-5xl flex-1 pt-4 lg:max-w-none lg:px-8 lg:pt-6">
-        {tab === "home" && (
-          <div className="tab-content-enter px-4 pb-28 lg:px-0 lg:pb-8">
-            <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-              <div>
-                <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-primary">Bair1 operations</div>
-                <h1 className="mt-1 text-2xl font-semibold tracking-tight text-ink sm:text-3xl">Your air-quality stack</h1>
-                <p className="mt-1 max-w-2xl text-sm text-muted">Real device telemetry, environmental context and particulate measurements—without simulated values mixed into live devices.</p>
-              </div>
-              <div className="flex items-center gap-2 text-xs text-muted">
-                <span className="h-2 w-2 rounded-full bg-primary" />
-                Real data only
-              </div>
-            </div>
-            {/* Desktop: two-column layout */}
-            <div className={`flex flex-col gap-6 lg:grid ${notecardTelemetry && !hasAirReading ? "lg:grid-cols-[minmax(520px,1.25fr)_minmax(360px,0.75fr)]" : "lg:grid-cols-[minmax(360px,0.9fr)_minmax(480px,1.1fr)] xl:grid-cols-[420px_1fr]"}`}>
-              {/* Left column: Gauge + PM stats */}
-              <div className="flex flex-col items-center gap-5">
-                <DataSourceBadge
-                  isLive={isLive}
-                  sensorId={sensorId}
-                  source="Simulated readings"
-                  hasDevice={Boolean(selectedDevice)}
-                />
-
-                {hasAirReading ? (
-                  <>
-                    <AqiGauge aqi={aqi} size={240} />
-                    <GuidanceStrip aqiState={aqiState} />
-                  </>
-                ) : notecardTelemetry ? (
-                  <NotecardOverview
-                    deviceId={selectedDevice!}
-                    deviceName={activeDeviceName}
-                    telemetry={notecardTelemetry}
-                    history={notecardHistory}
-                    lastUpdatedText={lastUpdatedText}
-                  />
-                ) : selectedDevice ? (
-                  <div className="w-full rounded-2xl border border-border bg-surface p-6 text-center">
-                    <div className="text-sm font-semibold text-ink">Waiting for the first real event</div>
-                    <p className="mt-2 text-xs leading-5 text-muted">This device is registered. Bair1 will update automatically after its next successful sync.</p>
-                  </div>
-                ) : (
-                  <>
-                    <AqiGauge aqi={aqi} size={240} />
-                    <GuidanceStrip aqiState={aqiState} />
-                  </>
-                )}
-
-                {/* PM particulate stats */}
-                {pm25 != null && (
-                  <div className="w-full">
-                    <div className="text-xs font-medium text-muted uppercase tracking-wider mb-2">Particulate Matter</div>
-                    <div className="grid grid-cols-4 gap-2 w-full">
-                      <div className="bg-surface border border-border rounded-xl p-3 text-center">
-                        <svg className="mx-auto mb-1 text-muted/40" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="12" cy="12" r="2"/><circle cx="7" cy="8" r="1.5"/><circle cx="17" cy="9" r="1"/><circle cx="9" cy="16" r="1"/><circle cx="16" cy="15" r="1.5"/></svg>
-                        <div className="text-lg font-bold text-ink">{pm1?.toFixed(1) ?? "—"}</div>
-                        <div className="text-[10px] text-muted uppercase">PM1.0</div>
-                        <div className="text-[9px] text-muted/50">µg/m³</div>
-                      </div>
-                      <div className="bg-surface border border-primary/40 rounded-xl p-3 text-center">
-                        <svg className="mx-auto mb-1 text-primary/60" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="12" cy="12" r="3"/><circle cx="6" cy="7" r="2"/><circle cx="18" cy="8" r="1.5"/><circle cx="8" cy="17" r="1.5"/><circle cx="17" cy="16" r="2"/></svg>
-                        <div className="text-lg font-bold text-primary">{pm25?.toFixed(1) ?? "—"}</div>
-                        <div className="text-[10px] text-muted uppercase">PM2.5</div>
-                        <div className="text-[9px] text-muted/50">µg/m³</div>
-                      </div>
-                      <div className="bg-surface border border-border rounded-xl p-3 text-center">
-                        <svg className="mx-auto mb-1 text-muted/40" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="12" cy="12" r="3.5"/><circle cx="5" cy="8" r="2.5"/><circle cx="19" cy="9" r="2"/><circle cx="7" cy="17" r="2"/><circle cx="18" cy="16" r="2.5"/></svg>
-                        <div className="text-lg font-bold text-ink">{pm4?.toFixed(1) ?? "—"}</div>
-                        <div className="text-[10px] text-muted uppercase">PM4.0</div>
-                        <div className="text-[9px] text-muted/50">µg/m³</div>
-                      </div>
-                      <div className="bg-surface border border-border rounded-xl p-3 text-center">
-                        <svg className="mx-auto mb-1 text-muted/40" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="12" cy="12" r="4"/><circle cx="4" cy="7" r="3"/><circle cx="20" cy="8" r="2.5"/><circle cx="6" cy="18" r="2.5"/><circle cx="19" cy="17" r="3"/></svg>
-                        <div className="text-lg font-bold text-ink">{pm10?.toFixed(1) ?? "—"}</div>
-                        <div className="text-[10px] text-muted uppercase">PM10</div>
-                        <div className="text-[9px] text-muted/50">µg/m³</div>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* Sensor connectivity stats */}
-                {(!notecardTelemetry || hasAirReading) && <div className="grid grid-cols-3 gap-2 w-full">
-                  <div className="bg-surface border border-border rounded-xl p-3 text-center">
-                    <svg className="mx-auto mb-1 text-muted/40" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M2 20h.01"/><path d="M7 20v-4"/><path d="M12 20v-8"/><path d="M17 20V8"/><path d="M22 20V4"/></svg>
-                    <div className="text-lg font-bold text-ink">{rssi ?? "—"}</div>
-                    <div className="text-[10px] text-muted uppercase">RSSI dBm</div>
-                  </div>
-                  <div className="bg-surface border border-border rounded-xl p-3 text-center">
-                    <svg className="mx-auto mb-1 text-muted/40" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                    <div className="text-lg font-bold text-ink">
-                      {uptimeMs ? `${Math.floor(uptimeMs / 60000)}m` : "—"}
-                    </div>
-                    <div className="text-[10px] text-muted uppercase">Uptime</div>
-                  </div>
-                  <div className="bg-surface border border-border rounded-xl p-3 text-center">
-                    <svg className="mx-auto mb-1 text-muted/40" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><circle cx="12" cy="20" r="1"/></svg>
-                    <div className="text-lg font-bold text-ink">{transport ?? "—"}</div>
-                    <div className="text-[10px] text-muted uppercase">Transport</div>
-                  </div>
-                </div>}
-
-                {airState && (
-                  <div className="w-full bg-surface border border-border rounded-xl px-4 py-2 text-center">
-                    <span className="text-xs text-muted">Air State: </span>
-                    <span className="text-xs font-medium text-ink">{airState}</span>
-                  </div>
-                )}
-              </div>
-
-              {/* Right column: Devices + Environmental */}
-              <div className="flex flex-col gap-5">
-                {/* Devices list */}
-                <div className="w-full">
-                  <div className="text-xs font-medium text-muted uppercase tracking-wider mb-2">Devices</div>
-                  <div className="flex flex-col gap-2">
-                    {devices.map((d) => {
-                      const isSelected = d.deviceId === selectedDevice;
-                      return (
-                        <button
-                          key={d.deviceId}
-                          onClick={() => setSelectedDevice(d.deviceId)}
-                          className={`w-full text-left bg-surface border rounded-xl px-4 py-3 transition-colors ${
-                            isSelected ? "border-primary/60 bg-primary/5" : "border-border hover:border-border/80"
-                          }`}
-                        >
-                          <div className="flex items-center justify-between">
-                            <div>
-                              <div className="text-sm font-medium text-ink">{d.name}</div>
-                              <div className="text-[10px] text-muted/60 font-mono">{d.deviceId}</div>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              {isSelected && isLive && (
-                                <span className="text-[10px] text-green-400 flex items-center gap-1">
-                                  <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
-                                  Live
-                                </span>
-                              )}
-                              {isSelected && sensorModel && (
-                                <span className="text-[10px] text-muted/60">{sensorModel}</span>
-                              )}
-                            </div>
-                          </div>
-                          {isSelected && (board || firmwareVersion) && (
-                            <div className="flex gap-3 mt-1.5">
-                              {board && (
-                                <span className="text-[10px] text-muted/50">{board}</span>
-                              )}
-                              {firmwareVersion && (
-                                <span className="text-[10px] text-muted/50">v{firmwareVersion}</span>
-                              )}
-                            </div>
-                          )}
-                        </button>
-                      );
-                    })}
-                    {devices.length === 0 && (
-                      <div className="bg-surface border border-border rounded-xl px-4 py-6 text-center">
-                        <div className="text-sm text-muted">No devices registered</div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Environmental data from Google APIs */}
-                <div className="w-full">
-                  <div className="text-xs font-medium text-muted uppercase tracking-wider mb-2">Environmental Intelligence</div>
-                  <EnvironmentCards lat={deviceLat} lng={deviceLng} />
-                </div>
-
-                <div className="w-full rounded-2xl border border-border bg-surface p-4">
-                  <div className="flex items-start justify-between gap-4">
-                    <div>
-                      <div className="text-xs font-medium uppercase tracking-wider text-muted">Workspace access</div>
-                      <div className="mt-1 text-sm font-semibold text-ink">
-                        You are a {isAdmin ? "workspace admin" : "workspace member"}
-                      </div>
-                    </div>
-                    <span className="rounded-full bg-primary/10 px-2.5 py-1 text-[10px] font-semibold text-primary">
-                      {isAdmin ? "Manage" : "Monitor"}
-                    </span>
-                  </div>
-                  <div className="mt-4 grid gap-3 text-xs sm:grid-cols-2">
-                    <div className="rounded-xl bg-bg/55 p-3">
-                      <div className="font-semibold text-ink/85">Team members</div>
-                      <p className="mt-1 leading-5 text-muted">See workspace devices, analytics and air guidance.</p>
-                    </div>
-                    <div className="rounded-xl bg-bg/55 p-3">
-                      <div className="font-semibold text-ink/85">External viewers</div>
-                      <p className="mt-1 leading-5 text-muted">Use a signed live-view link with read-only data.</p>
-                    </div>
-                  </div>
-                  {isAdmin && (
-                    <button
-                      type="button"
-                      onClick={() => setTab("admin")}
-                      className="mt-4 text-xs font-semibold text-primary transition-colors hover:text-primary-hover"
-                    >
-                      Manage team and devices →
-                    </button>
-                  )}
-                </div>
-              </div>
-            </div>
+      <div className="mx-auto max-w-6xl px-5 py-8 pb-28 lg:px-10">
+        {state === "loading" && <p role="status">Loading devices…</p>}
+        {state === "error" && (
+          <div role="alert">
+            <p>{error}</p>
+            <button onClick={loadDevices} className="access-button mt-4">
+              Retry
+            </button>
           </div>
         )}
-
-        {tab === "map" && <MapView />}
-        {tab === "analytics" && <AnalyticsView deviceId={selectedDevice ?? undefined} />}
-        {tab === "ai" && (
-          <AIChatView
-            deviceId={selectedDevice ?? undefined}
-            lat={deviceLat}
-            lng={deviceLng}
-          />
+        {state === "ready" && (
+          <>
+            {tab === "developer" ? (
+              <>
+                <AccessView
+                  key={selected}
+                  device={device}
+                  onChange={loadDevices}
+                />
+                <div className="mt-12 border-t border-border pt-8">
+                  <DeveloperView />
+                </div>
+              </>
+            ) : tab === "admin" && role === "super_admin" ? (
+              <AdminView />
+            ) : !device ? (
+              <section>
+                <h1 className="text-3xl font-semibold">
+                  Connect your first device
+                </h1>
+                <p className="my-4 max-w-xl text-muted">
+                  Use the one-time enrollment code supplied for your device.
+                  Devices stay private until their owner chooses another
+                  visibility.
+                </p>
+                <button
+                  className="access-button"
+                  onClick={() => setTab("developer")}
+                >
+                  Enroll a device
+                </button>
+              </section>
+            ) : (
+              <>
+                <div className="mb-8">
+                  <h1 className="text-3xl font-semibold">{device.name}</h1>
+                  <p className="mt-2 break-words text-sm text-muted">
+                    {device.visibility === "workspace"
+                      ? "Workspace access"
+                      : device.visibility === "public"
+                        ? "Published feed enabled"
+                        : "Private device"}{" "}
+                    ·{" "}
+                    {device.isOwner
+                      ? "You own this device"
+                      : "Shared workspace device"}{" "}
+                    · Workspace:{" "}
+                    {workspaces[device.orgId] ??
+                      (device.isOwner && !device.orgId.startsWith("workspace:")
+                        ? "Personal devices"
+                        : "Name unavailable")}
+                  </p>
+                </div>
+                {tab === "home" &&
+                  (snapshotError ? (
+                    <div role="alert">
+                      <h2 className="mb-2 text-xl font-semibold">
+                        {snapshotDenied
+                          ? "Access unavailable"
+                          : "Service unavailable"}
+                      </h2>
+                      <p>{snapshotError}</p>
+                      <button
+                        className="access-button mt-4"
+                        onClick={loadDevices}
+                      >
+                        Refresh devices
+                      </button>
+                    </div>
+                  ) : current ? (
+                    <MeasurementView
+                      reading={current.reading}
+                      telemetry={current.telemetry}
+                    />
+                  ) : (
+                    <p role="status">Loading measurements…</p>
+                  ))}
+                {tab === "analytics" && (
+                  <ReadingHistory key={selected} deviceId={selected} />
+                )}
+                {tab === "map" && (
+                  <MapView key={selected} deviceId={selected} />
+                )}
+                {tab === "ai" && (
+                  <div>
+                    <p className="mb-5 text-sm text-muted">
+                      Air Guide uses the selected device and external
+                      environmental context. Generated advice is separate from
+                      sensor measurements.
+                    </p>
+                    <AIChatView
+                      key={selected}
+                      deviceId={selected}
+                      lat={device.lat}
+                      lng={device.lng}
+                    />
+                  </div>
+                )}
+              </>
+            )}
+          </>
         )}
-        {tab === "developer" && <DeveloperView />}
-        {tab === "admin" && isAdmin && <AdminView />}
       </div>
-
-      <Navigation active={tab} onChange={setTab} role={viewerRole} />
+      <Navigation active={tab} onChange={setTab} role={role} />
     </main>
   );
 }

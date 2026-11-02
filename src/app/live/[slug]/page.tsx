@@ -1,3 +1,4 @@
+import Auth0ProviderWrapper from "@/components/Auth0ProviderWrapper";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { getPublicFeedSnapshot, PUBLIC_FEEDS } from "@/lib/public-feeds";
@@ -34,5 +35,5 @@ export default async function PublicLiveFeedPage({ params }: Props) {
 
   if (!snapshot) notFound();
 
-  return <PublicFeedClient initialSnapshot={{ ...snapshot, title: "", description: "" }} />;
+  return <Auth0ProviderWrapper><PublicFeedClient initialSnapshot={{ ...snapshot, title: "", description: "" }} /></Auth0ProviderWrapper>;
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 
 type AirInsight = {
   headline: string;
@@ -15,36 +15,15 @@ type Props = {
 
 export default function AirInsightCard({ slug }: Props) {
   const [insight, setInsight] = useState<AirInsight | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
   const [hasError, setHasError] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
 
   const fetchInsight = useCallback(async () => {
-    const response = await fetch(`/api/public/insight/${encodeURIComponent(slug)}`, { cache: "no-store" });
+    const response = await fetch(`/api/public/insight/${encodeURIComponent(slug)}`, { method: "POST", cache: "no-store" });
     if (!response.ok) throw new Error("Air Insight request failed");
     return (await response.json()) as AirInsight;
   }, [slug]);
-
-  useEffect(() => {
-    let cancelled = false;
-    fetchInsight()
-      .then((nextInsight) => {
-        if (cancelled) return;
-        setInsight(nextInsight);
-        setHasError(false);
-      })
-      .catch(() => {
-        if (cancelled) return;
-        setInsight(null);
-        setHasError(true);
-      })
-      .finally(() => {
-        if (!cancelled) setIsLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [fetchInsight]);
 
   const loadInsight = async () => {
     setIsLoading(true);
@@ -87,7 +66,7 @@ export default function AirInsightCard({ slug }: Props) {
             disabled={isLoading}
             className="h-8 border border-border bg-bg px-3 text-xs text-ink transition hover:border-primary disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {isLoading ? "Refreshing…" : "Refresh"}
+            {isLoading ? "Refreshing…" : insight ? "Generate again" : "Generate insight"}
           </button>
         </div>
       </div>
@@ -115,7 +94,7 @@ export default function AirInsightCard({ slug }: Props) {
         <p className="border-t border-border p-4 text-sm text-muted sm:px-5">
           {hasError
             ? "Air Insight is temporarily unavailable. The live sensor values and forecast below remain available."
-            : "Air Insight is unavailable. The live sensor values and forecast below remain available."}
+            : "Generate an insight from the published measurements and external reference data. Generated advice is separate from sensor readings."}
         </p>
       ) : null}
     </section>

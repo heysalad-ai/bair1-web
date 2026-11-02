@@ -1,0 +1,54 @@
+{
+  "AttributeDefinitions": [
+    {
+      "AttributeName": "deviceId",
+      "AttributeType": "S"
+    },
+    {
+      "AttributeName": "ownerId",
+      "AttributeType": "S"
+    },
+    {
+      "AttributeName": "orgId",
+      "AttributeType": "S"
+    }
+  ],
+  "GlobalSecondaryIndexes": [
+    {
+      "IndexName": "ownerId-deviceId-index",
+      "KeySchema": [
+        {
+          "AttributeName": "ownerId",
+          "KeyType": "HASH"
+        },
+        {
+          "AttributeName": "deviceId",
+          "KeyType": "RANGE"
+        }
+      ],
+      "Projection": {
+        "ProjectionType": "KEYS_ONLY"
+      }
+    },
+    {
+      "IndexName": "orgId-deviceId-index",
+      "KeySchema": [
+        {
+          "AttributeName": "orgId",
+          "KeyType": "HASH"
+        },
+        {
+          "AttributeName": "deviceId",
+          "KeyType": "RANGE"
+        }
+      ],
+      "Projection": {
+        "ProjectionType": "KEYS_ONLY"
+      }
+    }
+  ],
+  "DeletionProtectionEnabled": true,
+  "PointInTimeRecoverySpecification": {
+    "PointInTimeRecoveryEnabled": true
+  }
+}

@@ -1,26 +1,40 @@
-import { NextRequest } from "next/server";
-import { requireAuth } from "@/lib/auth";
-import { canAccessDevice } from "@/lib/device-access";
-import { getDevice } from "@/lib/devices";
-import { createDeviceShareToken } from "@/lib/device-sharing";
+import { usageGate } from "@/lib/usage-budget";
+import { requireUserDevice } from "@/lib/device-access";
+import { accessStoreEnabled, createStoredShare, listStoredShares, revokeStoredShare } from "@/lib/access-store";
 
 export const dynamic = "force-dynamic";
+type Context = { params: Promise<{ deviceId: string }> };
 
-export async function POST(
-  req: NextRequest,
-  { params }: { params: Promise<{ deviceId: string }> },
-) {
-  const auth = await requireAuth(req);
-  if (auth instanceof Response) return auth;
-
-  const { deviceId } = await params;
-  const device = await getDevice(deviceId);
-  const hasAccess = device && canAccessDevice({ kind: "user", user: auth.user }, device);
-  if (!hasAccess) return Response.json({ error: "device not found" }, { status: 404 });
-
-  const token = createDeviceShareToken(deviceId);
-  const appOrigin = process.env.NEXT_PUBLIC_APP_URL ?? "https://app.bair1.live";
-  const url = new URL(`/share/${encodeURIComponent(deviceId)}`, appOrigin);
-  url.searchParams.set("token", token);
-  return Response.json({ url: url.toString() });
+export async function GET(request: Request, context: Context) {
+  const { deviceId } = await context.params;
+  const access = await requireUserDevice(request, deviceId, "share");
+  if (access instanceof Response) return access;
+  return Response.json({ enabled: accessStoreEnabled(), shares: await listStoredShares(deviceId, access.device.ownerId) }, { headers: { "Cache-Control": "private, no-store" } });
+}
+export async function POST(request: Request, context: Context) {
+  const { deviceId } = await context.params;
+  const access = await requireUserDevice(request, deviceId, "share");
+  if (access instanceof Response) return access;
+  if (!accessStoreEnabled()) return Response.json({ error: "sharing is not configured" }, { status: 503 });
+  const body = await request.json().catch(() => null);
+  if (!body || typeof body !== "object" || Array.isArray(body)) return Response.json({ error: "JSON object required" }, { status: 400 });
+  const hours = body.hours ?? 24;
+  if (!Number.isInteger(hours) || hours < 1 || hours > 168) return Response.json({ error: "expiry must be between 1 and 168 hours" }, { status: 400 });
+  if ((await listStoredShares(deviceId, access.device.ownerId)).length >= 100) return Response.json({ error: "share limit reached; revoke unused links and wait for expiry cleanup" }, { status: 429 });
+  const limited = await usageGate("share", access.user.userId); if (limited) return limited;
+  const share = await createStoredShare(deviceId, access.device.ownerId, access.device.ownershipVersion ?? "legacy", hours);
+  const url = new URL(`/share/${encodeURIComponent(deviceId)}`, process.env.NEXT_PUBLIC_APP_URL ?? "https://app.bair1.live");
+  url.searchParams.set("token", share.token);
+  return Response.json({ id: share.id, url: url.toString(), expiresAt: share.expiresAt }, { status: 201, headers: { "Cache-Control": "private, no-store" } });
+}
+export async function DELETE(request: Request, context: Context) {
+  const { deviceId } = await context.params;
+  const access = await requireUserDevice(request, deviceId, "share");
+  if (access instanceof Response) return access;
+  if (!accessStoreEnabled()) return Response.json({ error: "sharing is not configured" }, { status: 503 });
+  const id = new URL(request.url).searchParams.get("id");
+  if (!id || !/^[\w-]{1,80}$/.test(id)) return Response.json({ error: "valid share id required" }, { status: 400 });
+  try { await revokeStoredShare(deviceId, access.device.ownerId, id); }
+  catch { return Response.json({ error: "share not found" }, { status: 404 }); }
+  return Response.json({ ok: true });
 }

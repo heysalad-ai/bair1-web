@@ -1,3 +1,4 @@
+import { reserveUsage, UsageBudgetError } from "@/lib/usage-budget";
 import { generateObject } from "ai";
 import { openai } from "@ai-sdk/openai";
 import { NextResponse } from "next/server";
@@ -159,6 +160,7 @@ async function createInsight(slug: string): Promise<Insight | null> {
 
   const result = await generateObject({
     model: openai(GPT_5_6_MODEL),
+    maxOutputTokens: 1000, maxRetries: 0, timeout: 30000,
     schema: insightSchema,
     schemaName: "air_quality_insight",
     system: `You are Bair1's public Air Insight analyst. Write for a non-technical person, using only the supplied data. Your output must be a concise, factual JSON object matching the schema.
@@ -174,7 +176,7 @@ async function getCachedInsight(slug: string) {
   const cached = insightCache.get(slug);
   if (cached && cached.expiresAt > Date.now()) return cached.value;
 
-  const value = createInsight(slug);
+  const value = reserveUsage("insight", slug).then(() => createInsight(slug));
   insightCache.set(slug, {
     value,
     expiresAt: Date.now() + INSIGHT_CACHE_SECONDS * 1000,
@@ -190,7 +192,7 @@ async function getCachedInsight(slug: string) {
 
 export const dynamic = "force-dynamic";
 
-export async function GET(
+export async function POST(
   _req: Request,
   { params }: { params: Promise<{ slug: string }> },
 ) {
@@ -210,11 +212,12 @@ export async function GET(
 
     return NextResponse.json(insight, {
       headers: {
-        "Cache-Control": `public, max-age=0, s-maxage=${INSIGHT_CACHE_SECONDS}, stale-while-revalidate=60`,
+        "Cache-Control": "no-store",
       },
     });
   } catch (error) {
-    console.error("Air Insight generation failed", error);
+    if (error instanceof UsageBudgetError) return NextResponse.json({ error: error.message }, { status: error.status });
+    console.error("Air Insight generation failed", error instanceof Error ? error.name : "unknown");
     return NextResponse.json({ error: "Air Insight is temporarily unavailable" }, { status: 503 });
   }
 }
