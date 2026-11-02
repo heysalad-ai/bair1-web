@@ -22,14 +22,16 @@ Review in that order. Do not merge the final branch alone without its dependenci
 | Hosted acceptance | Not run. Requires approved isolated resources/configuration and two independent identities |
 | Production / hardware | Unchanged; current main and production deployment independently checked |
 
-Final local suite: 33 offline tests, 12 database access/budget/index/race tests,
+Final local suite: 34 offline tests, 12 database access/budget/index/race tests,
 12 HTTP/database ingestion tests, one restore regression and 13 production-build
-HTTP checks (71), plus the actual native firmware assertions. GitHub CI checks
+HTTP checks (72), plus the actual native firmware assertions. GitHub CI checks
 build/lint/types/runtime audit, offline tests, production HTTP guards, database,
 firmware and secrets. Preview hosting intentionally fails until an isolated
 BAIR1_TABLE_PREFIX is configured. Do not remove the guard to make preview green.
 
 Voice also requires an explicit location for external environmental context; absent location does not silently use a default coordinate. Device values are described as last recorded, with capture/calibration uncertainty.
+
+Chat escapes untrusted model HTML before limited formatting, and private/public clients show service errors instead of silently dropping the response.
 
 The CodeQL password-hash classification on the existing random API-token lookup
 still requires security-review disposition; no rule is suppressed or alert

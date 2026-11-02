@@ -2,6 +2,7 @@
 
 import { useAuth0 } from "@auth0/auth0-react";
 import { useAuthenticatedFetch } from "@/lib/use-authenticated-fetch";
+import { simpleMarkdown } from "@/lib/safe-markdown";
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport, type UIMessage } from "ai";
 import { useState, useRef, useEffect } from "react";
@@ -21,8 +22,14 @@ export default function AIChatView({ deviceId, lat, lng }: Props) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
-  const { messages, sendMessage, status } = useChat({
-    transport: new DefaultChatTransport({ api: "/api/chat", body: { deviceId }, headers: async () => ({ Authorization: `Bearer ${await getAccessTokenSilently()}` }) }),
+  const { messages, sendMessage, status, error } = useChat({
+    transport: new DefaultChatTransport({
+      api: "/api/chat",
+      body: { deviceId },
+      headers: async () => ({
+        Authorization: `Bearer ${await getAccessTokenSilently()}`,
+      }),
+    }),
     messages: [
       {
         id: "system-intro",
@@ -48,7 +55,11 @@ export default function AIChatView({ deviceId, lat, lng }: Props) {
     if (!input.trim() || isLoading) return;
     const text = input;
     setInput("");
-    await sendMessage({ text });
+    try {
+      await sendMessage({ text });
+    } catch {
+      /* useChat exposes the error below. */
+    }
   };
 
   const playBriefing = async () => {
@@ -62,7 +73,11 @@ export default function AIChatView({ deviceId, lat, lng }: Props) {
 
       const res = await authenticatedFetch(`/api/voice/briefing?${params}`);
       const data = await res.json();
-      if (!res.ok) { setBriefingText(data.error || "Briefing unavailable. Try again later."); setIsVoicePlaying(false); return; }
+      if (!res.ok) {
+        setBriefingText(data.error || "Briefing unavailable. Try again later.");
+        setIsVoicePlaying(false);
+        return;
+      }
       setBriefingText(data.text);
 
       if (data.audio) {
@@ -74,24 +89,49 @@ export default function AIChatView({ deviceId, lat, lng }: Props) {
         setIsVoicePlaying(false);
       }
     } catch {
-      setBriefingText("Briefing unavailable. Check your connection and try again.");
+      setBriefingText(
+        "Briefing unavailable. Check your connection and try again.",
+      );
       setIsVoicePlaying(false);
     }
   };
 
   const sendQuickPrompt = async (prompt: string) => {
     if (isLoading) return;
-    await sendMessage({ text: prompt });
+    try {
+      await sendMessage({ text: prompt });
+    } catch {
+      /* useChat exposes the error below. */
+    }
   };
 
   const quickPrompts = [
-    { label: "Current AQI", prompt: deviceId ? `What's the current AQI from sensor ${deviceId}?` : "What's the air quality like?" },
-    { label: "Compare sources", prompt: deviceId && lat ? `Compare sensor ${deviceId} readings with Google Air Quality API at ${lat}, ${lng}` : "Compare sensor vs Google AQI" },
-    { label: "Health advice", prompt: "Give me health recommendations based on current conditions" },
-    { label: "Weather impact", prompt: lat ? `How is the weather at ${lat}, ${lng} affecting air quality?` : "How is weather affecting air quality?" },
+    {
+      label: "Current AQI",
+      prompt: deviceId
+        ? `What's the current AQI from sensor ${deviceId}?`
+        : "What's the air quality like?",
+    },
+    {
+      label: "Compare sources",
+      prompt:
+        deviceId && lat
+          ? `Compare sensor ${deviceId} readings with Google Air Quality API at ${lat}, ${lng}`
+          : "Compare sensor vs Google AQI",
+    },
+    {
+      label: "Health advice",
+      prompt: "Give me health recommendations based on current conditions",
+    },
+    {
+      label: "Weather impact",
+      prompt: lat
+        ? `How is the weather at ${lat}, ${lng} affecting air quality?`
+        : "How is weather affecting air quality?",
+    },
   ];
 
-  const getMessageText = (msg: typeof messages[0]): string => {
+  const getMessageText = (msg: (typeof messages)[0]): string => {
     if (!msg.parts) return "";
     return msg.parts
       .filter((p): p is { type: "text"; text: string } => p.type === "text")
@@ -116,16 +156,36 @@ export default function AIChatView({ deviceId, lat, lng }: Props) {
             <>
               <span className="flex gap-0.5">
                 <span className="w-1 h-4 bg-primary rounded-full animate-pulse" />
-                <span className="w-1 h-3 bg-primary rounded-full animate-pulse" style={{ animationDelay: "0.15s" }} />
-                <span className="w-1 h-5 bg-primary rounded-full animate-pulse" style={{ animationDelay: "0.3s" }} />
-                <span className="w-1 h-2 bg-primary rounded-full animate-pulse" style={{ animationDelay: "0.45s" }} />
+                <span
+                  className="w-1 h-3 bg-primary rounded-full animate-pulse"
+                  style={{ animationDelay: "0.15s" }}
+                />
+                <span
+                  className="w-1 h-5 bg-primary rounded-full animate-pulse"
+                  style={{ animationDelay: "0.3s" }}
+                />
+                <span
+                  className="w-1 h-2 bg-primary rounded-full animate-pulse"
+                  style={{ animationDelay: "0.45s" }}
+                />
               </span>
               Playing briefing...
             </>
           ) : (
             <>
-              <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+              <svg
+                width="18"
+                height="18"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth={2}
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"
+                />
               </svg>
               Voice Briefing
             </>
@@ -162,7 +222,7 @@ export default function AIChatView({ deviceId, lat, lng }: Props) {
               className={`flex ${(m.role as string) === "user" ? "justify-end" : "justify-start"}`}
             >
               <div
-                className={`max-w-[85%] rounded-2xl px-4 py-2.5 text-sm ${
+                className={`min-w-0 max-w-[85%] [overflow-wrap:anywhere] rounded-2xl px-4 py-2.5 text-sm ${
                   (m.role as string) === "user"
                     ? "bg-primary text-white rounded-br-sm"
                     : "bg-surface border border-border text-ink rounded-bl-sm"
@@ -185,8 +245,14 @@ export default function AIChatView({ deviceId, lat, lng }: Props) {
             <div className="bg-surface border border-border rounded-2xl rounded-bl-sm px-4 py-3">
               <div className="flex gap-1">
                 <span className="w-2 h-2 bg-muted rounded-full animate-bounce" />
-                <span className="w-2 h-2 bg-muted rounded-full animate-bounce" style={{ animationDelay: "0.15s" }} />
-                <span className="w-2 h-2 bg-muted rounded-full animate-bounce" style={{ animationDelay: "0.3s" }} />
+                <span
+                  className="w-2 h-2 bg-muted rounded-full animate-bounce"
+                  style={{ animationDelay: "0.15s" }}
+                />
+                <span
+                  className="w-2 h-2 bg-muted rounded-full animate-bounce"
+                  style={{ animationDelay: "0.3s" }}
+                />
               </div>
             </div>
           </div>
@@ -194,6 +260,13 @@ export default function AIChatView({ deviceId, lat, lng }: Props) {
         <div ref={messagesEndRef} />
       </div>
 
+      {error && (
+        <p role="alert" className="px-4 py-3 text-sm text-ink">
+          Air Guide could not respond. Check your session or try again later;
+          the service may be disabled or at its usage limit. Device readings
+          remain available.
+        </p>
+      )}
       {/* Input */}
       <form
         onSubmit={handleSubmit}
@@ -203,30 +276,33 @@ export default function AIChatView({ deviceId, lat, lng }: Props) {
           <input
             value={input}
             onChange={(e) => setInput(e.target.value)}
+            aria-label="Question for Air Guide"
             placeholder="Ask about air quality..."
             className="flex-1 bg-surface border border-border rounded-xl px-4 py-2.5 text-sm text-ink placeholder:text-muted/50 focus:outline-none focus:border-primary/50"
           />
           <button
             type="submit"
+            aria-label="Send message"
             disabled={isLoading || !input.trim()}
             className="bg-primary text-white rounded-xl px-4 py-2.5 text-sm font-medium disabled:opacity-50 hover:bg-primary-hover transition-colors"
           >
-            <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 19V5m0 0l-7 7m7-7l7 7" />
+            <svg
+              width="18"
+              height="18"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              strokeWidth={2}
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M12 19V5m0 0l-7 7m7-7l7 7"
+              />
             </svg>
           </button>
         </div>
       </form>
     </div>
   );
-}
-
-function simpleMarkdown(text: string): string {
-  return text
-    .replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>")
-    .replace(/\*(.*?)\*/g, "<em>$1</em>")
-    .replace(/`(.*?)`/g, '<code class="bg-border/50 px-1 rounded text-xs">$1</code>')
-    .replace(/\n- /g, "<br/>- ")
-    .replace(/\n\n/g, "</p><p>")
-    .replace(/\n/g, "<br/>");
 }
