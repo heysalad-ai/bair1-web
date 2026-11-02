@@ -11,7 +11,8 @@
     "lint": "eslint",
     "test:ingestion": "python3 tests/firmware-contract.py && BAIR1_FIRMWARE_FIXTURE=/tmp/bair1-firmware-payload.json node --test tests/reading-ingestion.integration.mjs && python3 tests/check-firmware-replies.py",
     "test:access": "node --test tests/access-store.integration.mjs",
-    "test:restore": "node --test tests/restore.integration.mjs"
+    "test:restore": "node --test tests/restore.integration.mjs",
+    "test:runtime": "node tests/runtime-smoke.mjs"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.85",
