@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { extractApiKeyFromHeaders, validateApiKey } from "@/lib/api-keys";
+import { requireApiDevice } from "@/lib/device-access";
 import { ackCommand, getCommand, setDeviceState } from "@/lib/dynamo";
 
 export const dynamic = "force-dynamic";
@@ -9,45 +9,68 @@ export const dynamic = "force-dynamic";
 // read the current value via /state.
 export async function POST(
   req: NextRequest,
-  { params }: { params: Promise<{ deviceId: string }> }
+  { params }: { params: Promise<{ deviceId: string }> },
 ) {
-  const principal = await validateApiKey(
-    extractApiKeyFromHeaders(req.headers),
-    ["write:devices"],
-  );
-  if (!principal) {
-    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  }
-
   const { deviceId } = await params;
+  const access = await requireApiDevice(req, deviceId, ["write:devices"]);
+  if (access instanceof Response) return access;
   if (!deviceId) {
-    return NextResponse.json({ error: "deviceId is required" }, { status: 400 });
+    return NextResponse.json(
+      { error: "deviceId is required" },
+      { status: 400 },
+    );
   }
 
-  let body: { commandId?: string; ok?: boolean; result?: Record<string, unknown> };
+  let body: {
+    commandId?: string;
+    ok?: boolean;
+    result?: Record<string, unknown>;
+  };
   try {
     body = await req.json();
   } catch {
     return NextResponse.json({ error: "invalid JSON body" }, { status: 400 });
   }
+  if (!body || typeof body !== "object" || Array.isArray(body))
+    return NextResponse.json(
+      { error: "JSON object required" },
+      { status: 400 },
+    );
   const { commandId, ok, result } = body;
-  if (!commandId) {
-    return NextResponse.json({ error: "commandId is required" }, { status: 400 });
+  if (typeof commandId !== "string" || typeof ok !== "boolean") {
+    return NextResponse.json(
+      { error: "commandId is required" },
+      { status: 400 },
+    );
   }
 
-  const existing = await getCommand(deviceId, commandId);
-  await ackCommand(deviceId, commandId, Boolean(ok), result ?? null);
+  try {
+    const existing = await getCommand(deviceId, commandId);
+    if (!existing)
+      return NextResponse.json({ error: "command not found" }, { status: 404 });
+    await ackCommand(deviceId, commandId, ok, result ?? null, access.device);
 
-  if (existing?.type === "set_led" && existing.payload) {
-    const on = existing.payload["on"];
-    const brightness = existing.payload["brightness"];
-    if (typeof on === "boolean") {
-      await setDeviceState(deviceId, {
-        on,
-        brightness: typeof brightness === "number" ? brightness : 0,
-      });
+    if (ok && existing?.type === "set_led" && existing.payload) {
+      const on = existing.payload["on"];
+      const brightness = existing.payload["brightness"];
+      if (typeof on === "boolean") {
+        await setDeviceState(
+          deviceId,
+          {
+            on,
+            brightness: typeof brightness === "number" ? brightness : 0,
+          },
+          null,
+          access.device,
+        );
+      }
     }
-  }
 
-  return NextResponse.json({ ok: true });
+    return NextResponse.json({ ok: true });
+  } catch {
+    return NextResponse.json(
+      { error: "Device changed or command unavailable" },
+      { status: 409 },
+    );
+  }
 }

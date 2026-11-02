@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { extractApiKeyFromHeaders, validateApiKey } from "@/lib/api-keys";
+import {
+  DeviceAccessChanged,
+  withDeviceRead,
+  requireApiDevice,
+} from "@/lib/device-access";
 import { enqueueCommand, type CommandType } from "@/lib/dynamo";
 
 export const dynamic = "force-dynamic";
@@ -14,19 +18,16 @@ const VALID_TYPES: CommandType[] = [
 
 export async function POST(
   req: NextRequest,
-  { params }: { params: Promise<{ deviceId: string }> }
+  { params }: { params: Promise<{ deviceId: string }> },
 ) {
-  const principal = await validateApiKey(
-    extractApiKeyFromHeaders(req.headers),
-    ["write:devices"],
-  );
-  if (!principal) {
-    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  }
-
   const { deviceId } = await params;
+  const access = await requireApiDevice(req, deviceId, ["write:devices"]);
+  if (access instanceof Response) return access;
   if (!deviceId) {
-    return NextResponse.json({ error: "deviceId is required" }, { status: 400 });
+    return NextResponse.json(
+      { error: "deviceId is required" },
+      { status: 400 },
+    );
   }
 
   let body: { type?: string; payload?: Record<string, unknown> };
@@ -36,6 +37,11 @@ export async function POST(
     return NextResponse.json({ error: "invalid JSON body" }, { status: 400 });
   }
 
+  if (!body || typeof body !== "object" || Array.isArray(body))
+    return NextResponse.json(
+      { error: "JSON object required" },
+      { status: 400 },
+    );
   const type = body.type as CommandType | undefined;
   if (!type || !VALID_TYPES.includes(type)) {
     return NextResponse.json(
@@ -44,38 +50,80 @@ export async function POST(
     );
   }
 
-  const payload = body.payload && typeof body.payload === "object" ? body.payload : null;
+  const payload =
+    body.payload && typeof body.payload === "object" ? body.payload : null;
 
   if (type === "set_led") {
     const on = payload?.["on"];
     const brightness = payload?.["brightness"];
     if (typeof on !== "boolean") {
-      return NextResponse.json({ error: "set_led requires payload.on (boolean)" }, { status: 400 });
+      return NextResponse.json(
+        { error: "set_led requires payload.on (boolean)" },
+        { status: 400 },
+      );
     }
-    if (brightness != null && (typeof brightness !== "number" || brightness < 0 || brightness > 255)) {
-      return NextResponse.json({ error: "payload.brightness must be 0-255" }, { status: 400 });
+    if (
+      brightness != null &&
+      (typeof brightness !== "number" || brightness < 0 || brightness > 255)
+    ) {
+      return NextResponse.json(
+        { error: "payload.brightness must be 0-255" },
+        { status: 400 },
+      );
     }
   }
 
-  const command = await enqueueCommand(deviceId, type, payload);
-  return NextResponse.json({ commandId: command.commandId, status: command.status, command }, { status: 202 });
+  try {
+    const command = await enqueueCommand(
+      deviceId,
+      type,
+      payload,
+      access.device,
+    );
+    return NextResponse.json(
+      { commandId: command.commandId, status: command.status, command },
+      { status: 202 },
+    );
+  } catch {
+    return NextResponse.json(
+      {
+        error:
+          "Device changed or command storage unavailable; refresh before retrying",
+      },
+      { status: 409 },
+    );
+  }
 }
 
 export async function GET(
   req: NextRequest,
-  { params }: { params: Promise<{ deviceId: string }> }
+  { params }: { params: Promise<{ deviceId: string }> },
 ) {
-  const principal = await validateApiKey(
-    extractApiKeyFromHeaders(req.headers),
-    ["read:devices"],
-  );
-  if (!principal) {
-    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  }
   const { deviceId } = await params;
+  const access = await requireApiDevice(req, deviceId, ["read:devices"]);
+  if (access instanceof Response) return access;
   const url = new URL(req.url);
-  const limit = Math.min(Math.max(parseInt(url.searchParams.get("limit") ?? "10", 10) || 10, 1), 50);
+  const limit = Math.min(
+    Math.max(parseInt(url.searchParams.get("limit") ?? "10", 10) || 10, 1),
+    50,
+  );
   const { pollCommands } = await import("@/lib/dynamo");
-  const commands = await pollCommands(deviceId, limit);
-  return NextResponse.json({ commands });
+  try {
+    const commands = await withDeviceRead(
+      { kind: "api-key", principal: access.principal },
+      deviceId,
+      () => pollCommands(deviceId, limit),
+    );
+    return NextResponse.json({ commands });
+  } catch (error) {
+    return NextResponse.json(
+      {
+        error:
+          error instanceof DeviceAccessChanged
+            ? "device not found"
+            : "Commands unavailable",
+      },
+      { status: error instanceof DeviceAccessChanged ? 404 : 503 },
+    );
+  }
 }

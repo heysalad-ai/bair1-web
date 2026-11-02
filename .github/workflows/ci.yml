@@ -1,10 +1,16 @@
 name: CI
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 on:
   push:
     branches: [main]
   pull_request:
-    branches: [main]
 
 jobs:
   secret-scan:
@@ -60,6 +66,7 @@ jobs:
     name: Build
     runs-on: ubuntu-latest
     needs: secret-scan
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
@@ -69,6 +76,12 @@ jobs:
           cache: npm
 
       - run: npm ci
+
+      - name: Runtime dependency audit
+        run: npm audit --omit=dev --audit-level=low
+
+      - name: Lint
+        run: npm run lint
 
       - name: Measurement regression tests
         run: npm test
@@ -85,3 +98,31 @@ jobs:
           NEXT_PUBLIC_AUTH0_CLIENT_ID: placeholder
           NEXT_PUBLIC_MAPBOX_TOKEN: ""
           STRIPE_SECRET_KEY: sk_test_placeholder
+
+      - name: Production-build HTTP authorization checks
+        run: npm run test:runtime
+
+  database:
+    name: Database and firmware contracts
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: secret-scan
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - run: npm ci --ignore-scripts
+      - name: Download pinned ArduinoJson headers
+        run: |
+          git clone --filter=blob:none --no-checkout https://github.com/bblanchon/ArduinoJson.git /tmp/bair1-arduinojson
+          git -C /tmp/bair1-arduinojson checkout 869d440274019939d8f03f5324108d1694e5118a
+      - name: Run isolated database and actual firmware protocol tests
+        run: scripts/test-database.sh
+        env:
+          ARDUINOJSON_INCLUDE: /tmp/bair1-arduinojson/src

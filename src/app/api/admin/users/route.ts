@@ -2,7 +2,7 @@ import { requireRole } from "@/lib/auth";
 import { getAllUsers, upsertUser, updateUserRole, deleteUser, type Role } from "@/lib/users";
 
 export async function GET(request: Request) {
-  const auth = await requireRole(request, ["super_admin", "admin"]);
+  const auth = await requireRole(request, ["super_admin"]);
   if (auth instanceof Response) return auth;
 
   const users = await getAllUsers();
@@ -10,7 +10,7 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const auth = await requireRole(request, ["super_admin", "admin"]);
+  const auth = await requireRole(request, ["super_admin"]);
   if (auth instanceof Response) return auth;
 
   const body = await request.json();
@@ -41,7 +41,7 @@ export async function POST(request: Request) {
 }
 
 export async function PATCH(request: Request) {
-  const auth = await requireRole(request, ["super_admin", "admin"]);
+  const auth = await requireRole(request, ["super_admin"]);
   if (auth instanceof Response) return auth;
 
   const body = await request.json();
