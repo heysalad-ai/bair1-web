@@ -33,6 +33,7 @@ export async function getAirQuality(location: LatLng): Promise<AqiCondition | nu
     `https://airquality.googleapis.com/v1/currentConditions:lookup?key=${GOOGLE_API_KEY}`,
     {
       method: "POST",
+      signal: AbortSignal.timeout(8000),
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         location: { latitude: location.lat, longitude: location.lng },
@@ -61,6 +62,7 @@ export async function getAirQualityForecast(
     `https://airquality.googleapis.com/v1/forecast:lookup?key=${GOOGLE_API_KEY}`,
     {
       method: "POST",
+      signal: AbortSignal.timeout(8000),
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         location: { latitude: location.lat, longitude: location.lng },
@@ -108,7 +110,7 @@ export async function getPollenForecast(
   if (!GOOGLE_API_KEY) return [];
   const res = await fetch(
     `https://pollen.googleapis.com/v1/forecast:lookup?key=${GOOGLE_API_KEY}&location.latitude=${location.lat}&location.longitude=${location.lng}&days=${days}`,
-    { next: { revalidate: 3600 } }
+    { signal: AbortSignal.timeout(8000), next: { revalidate: 3600 } }
   );
   if (!res.ok) return [];
   const data = await res.json();
@@ -136,7 +138,7 @@ export async function getWeather(location: LatLng): Promise<WeatherCondition | n
   if (!GOOGLE_API_KEY) return null;
   const res = await fetch(
     `https://weather.googleapis.com/v1/currentConditions:lookup?key=${GOOGLE_API_KEY}&location.latitude=${location.lat}&location.longitude=${location.lng}`,
-    { next: { revalidate: 1800 } }
+    { signal: AbortSignal.timeout(8000), next: { revalidate: 1800 } }
   );
   if (!res.ok) return null;
   return res.json();
@@ -149,7 +151,7 @@ export async function getWeatherForecast(
   if (!GOOGLE_API_KEY) return [];
   const res = await fetch(
     `https://weather.googleapis.com/v1/forecast/hours:lookup?key=${GOOGLE_API_KEY}&location.latitude=${location.lat}&location.longitude=${location.lng}&hours=${hours}`,
-    { next: { revalidate: 3600 } }
+    { signal: AbortSignal.timeout(8000), next: { revalidate: 3600 } }
   );
   if (!res.ok) return [];
   const data = await res.json();
@@ -164,7 +166,7 @@ export async function reverseGeocode(
   if (!GOOGLE_API_KEY) return null;
   const res = await fetch(
     `https://maps.googleapis.com/maps/api/geocode/json?latlng=${location.lat},${location.lng}&key=${GOOGLE_API_KEY}`,
-    { next: { revalidate: 86400 } }
+    { signal: AbortSignal.timeout(8000), next: { revalidate: 86400 } }
   );
   if (!res.ok) return null;
   const data = await res.json();

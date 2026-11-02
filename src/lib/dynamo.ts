@@ -1,7 +1,9 @@
+import { registryCondition } from "./registry-condition";
 import { boundedRange } from "./measurement-contract";
-import { getDevice, getAllDevicesRegistry } from "./devices";
+import { getDevice, getAllDevicesRegistry, type Device } from "./devices";
 import { storageTable } from "./storage-config";
 import {
+  TransactWriteItemsCommand,
   PutItemCommand,
   QueryCommand,
   ScanCommand,
@@ -13,7 +15,11 @@ import {
 } from "@aws-sdk/client-dynamodb";
 import { dynamoClient } from "./aws-dynamo";
 
-import { persistReading, type IngestionIdentity, type IngestionResult } from "./reading-ingestion";
+import {
+  persistReading,
+  type IngestionIdentity,
+  type IngestionResult,
+} from "./reading-ingestion";
 
 const TABLE = storageTable("bair1-readings");
 
@@ -66,16 +72,39 @@ export interface Reading {
 
 export type ReadingInput = Omit<
   Reading,
-  | "timestamp" | "capturedAt" | "receivedAt" | "clockQuality"
-  | "altitudeMeters" | "adcD3Raw" | "adcD2Raw" | "adcD3PinVoltage" | "adcD2PinVoltage" | "adcD3InputVoltage" | "adcD2InputVoltage"
-  | "lat" | "lng" | "locationAccuracy"
-  | "pm1" | "pm25" | "pm4" | "pm10"
-  | "sensorModel" | "board"
-  | "temperature" | "humidity" | "pressure"
-  | "dhtTemp" | "dhtHum"
-  | "accelX" | "accelY" | "accelZ"
-  | "gyroX" | "gyroY" | "gyroZ"
-  | "batteryVoltage" | "batteryLevel"
+  | "timestamp"
+  | "capturedAt"
+  | "receivedAt"
+  | "clockQuality"
+  | "altitudeMeters"
+  | "adcD3Raw"
+  | "adcD2Raw"
+  | "adcD3PinVoltage"
+  | "adcD2PinVoltage"
+  | "adcD3InputVoltage"
+  | "adcD2InputVoltage"
+  | "lat"
+  | "lng"
+  | "locationAccuracy"
+  | "pm1"
+  | "pm25"
+  | "pm4"
+  | "pm10"
+  | "sensorModel"
+  | "board"
+  | "temperature"
+  | "humidity"
+  | "pressure"
+  | "dhtTemp"
+  | "dhtHum"
+  | "accelX"
+  | "accelY"
+  | "accelZ"
+  | "gyroX"
+  | "gyroY"
+  | "gyroZ"
+  | "batteryVoltage"
+  | "batteryLevel"
 > & {
   rawPayload: Record<string, unknown>;
   timestamp?: string;
@@ -87,21 +116,31 @@ type StoredReading = {
   rawPayload: Record<string, unknown>;
 };
 
-function text(item: Record<string, AttributeValue>, key: string): string | null {
+function text(
+  item: Record<string, AttributeValue>,
+  key: string,
+): string | null {
   return item[key]?.S ?? null;
 }
 
-function number(item: Record<string, AttributeValue>, key: string): number | null {
+function number(
+  item: Record<string, AttributeValue>,
+  key: string,
+): number | null {
   const value = item[key]?.N;
   return value == null ? null : Number(value);
 }
 
-function parseRawPayload(item: Record<string, AttributeValue>): Record<string, unknown> {
+function parseRawPayload(
+  item: Record<string, AttributeValue>,
+): Record<string, unknown> {
   const value = text(item, "rawPayload");
   if (!value) return {};
   try {
     const parsed: unknown = JSON.parse(value);
-    return parsed && typeof parsed === "object" ? parsed as Record<string, unknown> : {};
+    return parsed && typeof parsed === "object"
+      ? (parsed as Record<string, unknown>)
+      : {};
   } catch {
     return {};
   }
@@ -109,17 +148,21 @@ function parseRawPayload(item: Record<string, AttributeValue>): Record<string, u
 
 function rawNumber(raw: Record<string, unknown>, key: string): number | null {
   const value = raw[key];
-  return value == null || value === "" || !Number.isFinite(Number(value)) ? null : Number(value);
+  return value == null || value === "" || !Number.isFinite(Number(value))
+    ? null
+    : Number(value);
 }
 
 function parseItem(item: Record<string, AttributeValue>): Reading {
   const raw = parseRawPayload(item);
   return {
-    deviceId: text(item, "physicalDeviceId") ?? text(item, "deviceId") ?? "unknown",
+    deviceId:
+      text(item, "physicalDeviceId") ?? text(item, "deviceId") ?? "unknown",
     timestamp: text(item, "readingAt") ?? text(item, "timestamp") ?? "",
     capturedAt: text(item, "capturedAt"),
     receivedAt: text(item, "receivedAt"),
-    clockQuality: (text(item, "clockQuality") ?? "unknown") as Reading["clockQuality"],
+    clockQuality: (text(item, "clockQuality") ??
+      "unknown") as Reading["clockQuality"],
     altitudeMeters: rawNumber(raw, "altitudeMeters"),
     adcD3Raw: rawNumber(raw, "adcD3Raw"),
     adcD2Raw: rawNumber(raw, "adcD2Raw"),
@@ -148,7 +191,10 @@ function parseItem(item: Record<string, AttributeValue>): Reading {
     // Extended sensor fields (Genesis Mini multi-sensor)
     temperature: rawNumber(raw, "temperature"),
     humidity: rawNumber(raw, "humidity"),
-    pressure: raw.transport === "notehub" && raw.pressureUnit !== "hPa" ? null : rawNumber(raw, "pressure"),
+    pressure:
+      raw.transport === "notehub" && raw.pressureUnit !== "hPa"
+        ? null
+        : rawNumber(raw, "pressure"),
     dhtTemp: rawNumber(raw, "dhtTemp"),
     dhtHum: rawNumber(raw, "dhtHum"),
     accelX: rawNumber(raw, "accelX"),
@@ -192,84 +238,177 @@ async function scanAll(input: ScanCommandInput) {
   return items;
 }
 
-export async function getReadings(deviceId: string, limit = 100): Promise<Reading[]> {
+export async function getReadings(
+  deviceId: string,
+  limit = 100,
+): Promise<Reading[]> {
   const version = (await getDevice(deviceId))?.ownershipVersion;
-  const items = await queryAll({
-    TableName: TABLE,
-    KeyConditionExpression: "deviceId = :deviceId",
-    ExpressionAttributeValues: { ":deviceId": { S: version && version !== "legacy" ? `${deviceId}#${version}` : deviceId } },
-    ScanIndexForward: false,
-    Limit: Math.min(Math.max(limit, 1), 10_000),
-  }, limit);
+  const items = await queryAll(
+    {
+      TableName: TABLE,
+      KeyConditionExpression: "deviceId = :deviceId",
+      ExpressionAttributeValues: {
+        ":deviceId": {
+          S:
+            version && version !== "legacy"
+              ? `${deviceId}#${version}`
+              : deviceId,
+        },
+      },
+      ScanIndexForward: false,
+      Limit: Math.min(Math.max(limit, 1), 10_000),
+    },
+    limit,
+  );
   return items.map(parseItem);
 }
 
-export async function getLatestReading(deviceId: string): Promise<Reading | null> {
+export async function getLatestReading(
+  deviceId: string,
+): Promise<Reading | null> {
   const readings = await getReadings(deviceId, 1);
   return readings[0] ?? null;
 }
 
 export async function getAllDevices(): Promise<string[]> {
-  return (await getAllDevicesRegistry()).filter(device => device.status === "active").map(device => device.deviceId);
+  return (await getAllDevicesRegistry())
+    .filter((device) => device.status === "active")
+    .map((device) => device.deviceId);
 }
 
 export async function getLatestReadings(limit = 20): Promise<Reading[]> {
-  const latest = await Promise.all((await getAllDevices()).map((deviceId) => getLatestReading(deviceId)));
+  const latest = await Promise.all(
+    (await getAllDevices()).map((deviceId) => getLatestReading(deviceId)),
+  );
   return latest
     .filter((reading): reading is Reading => Boolean(reading))
     .sort((a, b) => b.timestamp.localeCompare(a.timestamp))
     .slice(0, limit);
 }
 
-export async function getReadingsInRange(deviceId: string, from: string, to: string, limit = 10000): Promise<Reading[]> {
+export async function getReadingsInRange(
+  deviceId: string,
+  from: string,
+  to: string,
+  limit = 10000,
+): Promise<Reading[]> {
   const range = boundedRange(from, to);
   limit = Math.min(Math.max(Math.floor(limit), 1), 10000);
   const version = (await getDevice(deviceId))?.ownershipVersion;
-  const items = await queryAll({
-    TableName: TABLE,
-    KeyConditionExpression: "deviceId = :deviceId AND #timestamp BETWEEN :from AND :to",
-    ExpressionAttributeNames: { "#timestamp": "timestamp" },
-    ExpressionAttributeValues: {
-      ":deviceId": { S: version && version !== "legacy" ? `${deviceId}#${version}` : deviceId },
-      ":from": { S: range.from },
-      ":to": { S: range.to + "~" },
+  const items = await queryAll(
+    {
+      TableName: TABLE,
+      KeyConditionExpression:
+        "deviceId = :deviceId AND #timestamp BETWEEN :from AND :to",
+      ExpressionAttributeNames: { "#timestamp": "timestamp" },
+      ExpressionAttributeValues: {
+        ":deviceId": {
+          S:
+            version && version !== "legacy"
+              ? `${deviceId}#${version}`
+              : deviceId,
+        },
+        ":from": { S: range.from },
+        ":to": { S: range.to + "~" },
+      },
+      Limit: Math.min(limit, 1000),
+      ScanIndexForward: false,
     },
-    Limit: Math.min(limit, 1000),
-    ScanIndexForward: false,
-  }, limit);
-  return items.map(parseItem).sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+    limit,
+  );
+  return items
+    .map(parseItem)
+    .sort((a, b) => a.timestamp.localeCompare(b.timestamp));
 }
 
-export async function getReadingPage(deviceId: string, options: { limit?: number; cursor?: string | null; from?: string | null; to?: string | null } = {}) {
-  if (options.limit != null && (!Number.isInteger(options.limit) || options.limit < 1)) throw new RangeError("Page limit must be a positive integer");
+export async function getReadingPage(
+  deviceId: string,
+  options: {
+    limit?: number;
+    cursor?: string | null;
+    from?: string | null;
+    to?: string | null;
+  } = {},
+) {
+  if (
+    options.limit != null &&
+    (!Number.isInteger(options.limit) || options.limit < 1)
+  )
+    throw new RangeError("Page limit must be a positive integer");
   const limit = Math.min(options.limit ?? 200, 500);
   const version = (await getDevice(deviceId))?.ownershipVersion;
-  const partition = version && version !== "legacy" ? `${deviceId}#${version}` : deviceId;
-  if (Boolean(options.from) !== Boolean(options.to)) throw new RangeError("Both range dates are required");
-  const range = options.from && options.to ? boundedRange(options.from, options.to) : null;
+  const partition =
+    version && version !== "legacy" ? `${deviceId}#${version}` : deviceId;
+  if (Boolean(options.from) !== Boolean(options.to))
+    throw new RangeError("Both range dates are required");
+  const range =
+    options.from && options.to ? boundedRange(options.from, options.to) : null;
   let exclusiveStartKey: Record<string, AttributeValue> | undefined;
   if (options.cursor) {
     try {
       if (options.cursor.length > 1500) throw new Error();
-      const cursor = JSON.parse(Buffer.from(options.cursor, "base64url").toString("utf8"));
-      if (cursor.deviceId !== partition || cursor.from !== (range?.from ?? null) || cursor.to !== (range?.to ?? null)
-        || typeof cursor.timestamp !== "string" || cursor.timestamp.length > 200) throw new Error();
-      exclusiveStartKey = { deviceId: { S: partition }, timestamp: { S: cursor.timestamp } };
-    } catch { throw new RangeError("Pagination cursor does not match this device and range"); }
+      const cursor = JSON.parse(
+        Buffer.from(options.cursor, "base64url").toString("utf8"),
+      );
+      if (
+        cursor.deviceId !== partition ||
+        cursor.from !== (range?.from ?? null) ||
+        cursor.to !== (range?.to ?? null) ||
+        typeof cursor.timestamp !== "string" ||
+        cursor.timestamp.length > 200
+      )
+        throw new Error();
+      exclusiveStartKey = {
+        deviceId: { S: partition },
+        timestamp: { S: cursor.timestamp },
+      };
+    } catch {
+      throw new RangeError(
+        "Pagination cursor does not match this device and range",
+      );
+    }
   }
-  const result = await dynamoClient.send(new QueryCommand({ TableName: TABLE, Limit: limit, ScanIndexForward: false, ExclusiveStartKey: exclusiveStartKey,
-    KeyConditionExpression: range ? "deviceId = :d AND #t BETWEEN :f AND :t" : "deviceId = :d",
-    ...(range ? { ExpressionAttributeNames: { "#t": "timestamp" } } : {}),
-    ExpressionAttributeValues: { ":d": { S: partition }, ...(range ? { ":f": { S: range.from }, ":t": { S: range.to + "~" } } : {}) },
-  }));
-  const nextCursor = result.LastEvaluatedKey ? Buffer.from(JSON.stringify({ deviceId: partition, timestamp: result.LastEvaluatedKey.timestamp.S,
-    from: range?.from ?? null, to: range?.to ?? null })).toString("base64url") : null;
+  const result = await dynamoClient.send(
+    new QueryCommand({
+      TableName: TABLE,
+      Limit: limit,
+      ScanIndexForward: false,
+      ExclusiveStartKey: exclusiveStartKey,
+      KeyConditionExpression: range
+        ? "deviceId = :d AND #t BETWEEN :f AND :t"
+        : "deviceId = :d",
+      ...(range ? { ExpressionAttributeNames: { "#t": "timestamp" } } : {}),
+      ExpressionAttributeValues: {
+        ":d": { S: partition },
+        ...(range
+          ? { ":f": { S: range.from }, ":t": { S: range.to + "~" } }
+          : {}),
+      },
+    }),
+  );
+  const nextCursor = result.LastEvaluatedKey
+    ? Buffer.from(
+        JSON.stringify({
+          deviceId: partition,
+          timestamp: result.LastEvaluatedKey.timestamp.S,
+          from: range?.from ?? null,
+          to: range?.to ?? null,
+        }),
+      ).toString("base64url")
+    : null;
   return { data: (result.Items ?? []).map(parseItem), nextCursor, limit };
 }
 
-export async function storeReading(input: ReadingInput): Promise<IngestionResult> {
+export async function storeReading(
+  input: ReadingInput,
+): Promise<IngestionResult> {
   const item: Record<string, AttributeValue> = {
-    deviceId: { S: input.ownershipVersion && input.ownershipVersion !== "legacy" ? `${input.deviceId}#${input.ownershipVersion}` : input.deviceId },
+    deviceId: {
+      S:
+        input.ownershipVersion && input.ownershipVersion !== "legacy"
+          ? `${input.deviceId}#${input.ownershipVersion}`
+          : input.deviceId,
+    },
     physicalDeviceId: { S: input.deviceId },
     rawPayload: { S: JSON.stringify(input.rawPayload) },
   };
@@ -300,26 +439,41 @@ export async function storeReading(input: ReadingInput): Promise<IngestionResult
 }
 
 export async function getReadingsMissingLocation(): Promise<StoredReading[]> {
-  const items = await scanAll({ TableName: TABLE, ProjectionExpression: "deviceId, #timestamp, rawPayload", ExpressionAttributeNames: { "#timestamp": "timestamp" } });
+  const items = await scanAll({
+    TableName: TABLE,
+    ProjectionExpression: "deviceId, #timestamp, rawPayload",
+    ExpressionAttributeNames: { "#timestamp": "timestamp" },
+  });
   return items
     .map((item) => ({
       deviceId: text(item, "deviceId") ?? "",
       timestamp: text(item, "timestamp") ?? "",
       rawPayload: parseRawPayload(item),
     }))
-    .filter(({ rawPayload }) => rawPayload.cellTower && rawPayload.lat == null && rawPayload.lng == null);
+    .filter(
+      ({ rawPayload }) =>
+        rawPayload.cellTower &&
+        rawPayload.lat == null &&
+        rawPayload.lng == null,
+    );
 }
 
-export async function updateReadingRawPayload(reading: StoredReading): Promise<void> {
-  await dynamoClient.send(new UpdateItemCommand({
-    TableName: TABLE,
-    Key: {
-      deviceId: { S: reading.deviceId },
-      timestamp: { S: reading.timestamp },
-    },
-    UpdateExpression: "SET rawPayload = :rawPayload",
-    ExpressionAttributeValues: { ":rawPayload": { S: JSON.stringify(reading.rawPayload) } },
-  }));
+export async function updateReadingRawPayload(
+  reading: StoredReading,
+): Promise<void> {
+  await dynamoClient.send(
+    new UpdateItemCommand({
+      TableName: TABLE,
+      Key: {
+        deviceId: { S: reading.deviceId },
+        timestamp: { S: reading.timestamp },
+      },
+      UpdateExpression: "SET rawPayload = :rawPayload",
+      ExpressionAttributeValues: {
+        ":rawPayload": { S: JSON.stringify(reading.rawPayload) },
+      },
+    }),
+  );
 }
 
 // ---------- Device command queue ----------
@@ -360,10 +514,16 @@ export async function enqueueCommand(
   deviceId: string,
   type: CommandType,
   payload: Record<string, unknown> | null = null,
+  expectedDevice?: Device,
 ): Promise<Command> {
   const now = Date.now();
   const createdAt = new Date(now).toISOString();
-  const prefix = await ownershipKey(deviceId, "command");
+  const snapshot = expectedDevice ?? (await getDevice(deviceId));
+  if (!snapshot) throw new Error("device not found");
+  const prefix =
+    snapshot.ownershipVersion && snapshot.ownershipVersion !== "legacy"
+      ? `command#${snapshot.ownershipVersion}`
+      : "command";
   const commandId = `${prefix}#${now.toString(36)}-${randomId("cmd")}`;
   const expiresAt = Math.floor(now / 1000) + COMMAND_TTL_SECONDS;
   const item: Record<string, AttributeValue> = {
@@ -376,7 +536,14 @@ export async function enqueueCommand(
   };
   if (payload) item.payload = { S: JSON.stringify(payload) };
 
-  await dynamoClient.send(new PutItemCommand({ TableName: COMMANDS_TABLE, Item: item }));
+  await dynamoClient.send(
+    new TransactWriteItemsCommand({
+      TransactItems: [
+        { ConditionCheck: registryCondition(snapshot) },
+        { Put: { TableName: COMMANDS_TABLE, Item: item } },
+      ],
+    }),
+  );
   return {
     deviceId,
     commandId,
@@ -389,22 +556,40 @@ export async function enqueueCommand(
   };
 }
 
-export async function pollCommands(deviceId: string, limit = 10): Promise<Command[]> {
+export async function pollCommands(
+  deviceId: string,
+  limit = 10,
+): Promise<Command[]> {
   const prefix = await ownershipKey(deviceId, "command");
   const versioned = prefix !== "command";
-  const items = await queryAll({
-    TableName: COMMANDS_TABLE,
-    KeyConditionExpression: versioned ? "deviceId = :deviceId AND begins_with(commandId, :prefix)" : "deviceId = :deviceId",
-    ExpressionAttributeValues: { ":deviceId": { S: deviceId }, ":pending": { S: "pending" }, ":now": { N: String(Math.floor(Date.now() / 1000)) }, ...(versioned ? { ":prefix": { S: prefix + "#" } } : {}) },
-    FilterExpression: "#status = :pending AND expiresAt > :now",
-    ExpressionAttributeNames: { "#status": "status" },
-    ScanIndexForward: true,
-    Limit: Math.min(Math.max(limit, 1), 50),
-  }, limit);
+  const items = await queryAll(
+    {
+      TableName: COMMANDS_TABLE,
+      KeyConditionExpression: versioned
+        ? "deviceId = :deviceId AND begins_with(commandId, :prefix)"
+        : "deviceId = :deviceId",
+      ExpressionAttributeValues: {
+        ":deviceId": { S: deviceId },
+        ":pending": { S: "pending" },
+        ":now": { N: String(Math.floor(Date.now() / 1000)) },
+        ...(versioned ? { ":prefix": { S: prefix + "#" } } : {}),
+      },
+      FilterExpression: "#status = :pending AND expiresAt > :now",
+      ExpressionAttributeNames: { "#status": "status" },
+      ScanIndexForward: true,
+      Limit: Math.min(Math.max(limit, 1), 50),
+    },
+    limit,
+  );
 
   return items
     .map(parseCommandItem)
-    .filter((cmd): cmd is Command => cmd !== null && cmd.status === "pending" && cmd.expiresAt > Date.now() / 1000);
+    .filter(
+      (cmd): cmd is Command =>
+        cmd !== null &&
+        cmd.status === "pending" &&
+        cmd.expiresAt > Date.now() / 1000,
+    );
 }
 
 export async function ackCommand(
@@ -412,43 +597,65 @@ export async function ackCommand(
   commandId: string,
   ok: boolean,
   result: Record<string, unknown> | null = null,
+  expectedDevice?: Device,
 ): Promise<void> {
+  const snapshot = expectedDevice ?? (await getDevice(deviceId));
+  if (!snapshot) throw new Error("device not found");
+  const prefix =
+    snapshot.ownershipVersion && snapshot.ownershipVersion !== "legacy"
+      ? `command#${snapshot.ownershipVersion}#`
+      : "command#";
+  if (!commandId.startsWith(prefix)) throw new Error("command not found");
   const updateExpression = "SET #status = :status, result = :result";
   const names = { "#status": "status" };
   const values: Record<string, AttributeValue> = {
     ":status": { S: ok ? "done" : "done" },
-    ":result": { S: JSON.stringify({ ok, ...(result ?? {}) }) },
+    ":result": { S: JSON.stringify({ ...(result ?? {}), ok }) },
   };
-  await dynamoClient.send(new UpdateItemCommand({
-    TableName: COMMANDS_TABLE,
-    Key: {
-      deviceId: { S: deviceId },
-      commandId: { S: commandId },
-    },
-    UpdateExpression: updateExpression,
-    ConditionExpression: "attribute_exists(commandId)",
-    ExpressionAttributeNames: names,
-    ExpressionAttributeValues: values,
-  }));
+  await dynamoClient.send(
+    new TransactWriteItemsCommand({
+      TransactItems: [
+        { ConditionCheck: registryCondition(snapshot) },
+        {
+          Update: {
+            TableName: COMMANDS_TABLE,
+            Key: { deviceId: { S: deviceId }, commandId: { S: commandId } },
+            UpdateExpression: updateExpression,
+            ConditionExpression: "attribute_exists(commandId)",
+            ExpressionAttributeNames: names,
+            ExpressionAttributeValues: values,
+          },
+        },
+      ],
+    }),
+  );
 }
 
-export async function getCommand(deviceId: string, commandId: string): Promise<Command | null> {
+export async function getCommand(
+  deviceId: string,
+  commandId: string,
+): Promise<Command | null> {
   const prefix = await ownershipKey(deviceId, "command");
   if (prefix !== "command" && !commandId.startsWith(prefix + "#")) return null;
-  const result = await dynamoClient.send(new QueryCommand({
-    TableName: COMMANDS_TABLE,
-    KeyConditionExpression: "deviceId = :deviceId AND commandId = :commandId",
-    ExpressionAttributeValues: {
-      ":deviceId": { S: deviceId },
-      ":commandId": { S: commandId },
-    },
-    Limit: 1,
-  }));
+  const result = await dynamoClient.send(
+    new QueryCommand({
+      TableName: COMMANDS_TABLE,
+      KeyConditionExpression: "deviceId = :deviceId AND commandId = :commandId",
+      ExpressionAttributeValues: {
+        ":deviceId": { S: deviceId },
+        ":commandId": { S: commandId },
+      },
+      Limit: 1,
+    }),
+  );
   const item = result.Items?.[0];
-  return item ? parseCommandItem(item) : null;
+  const command = item ? parseCommandItem(item) : null;
+  return command && command.expiresAt > Date.now() / 1000 ? command : null;
 }
 
-function parseCommandItem(item: Record<string, AttributeValue>): Command | null {
+function parseCommandItem(
+  item: Record<string, AttributeValue>,
+): Command | null {
   const deviceId = item["deviceId"]?.S;
   const commandId = item["commandId"]?.S;
   const type = item["type"]?.S as CommandType | undefined;
@@ -458,16 +665,26 @@ function parseCommandItem(item: Record<string, AttributeValue>): Command | null 
   if (payloadRaw) {
     try {
       const parsed: unknown = JSON.parse(payloadRaw);
-      payload = parsed && typeof parsed === "object" ? parsed as Record<string, unknown> : null;
-    } catch { /* ignore */ }
+      payload =
+        parsed && typeof parsed === "object"
+          ? (parsed as Record<string, unknown>)
+          : null;
+    } catch {
+      /* ignore */
+    }
   }
   let result: Record<string, unknown> | null = null;
   const resultRaw = item["result"]?.S;
   if (resultRaw) {
     try {
       const parsed: unknown = JSON.parse(resultRaw);
-      result = parsed && typeof parsed === "object" ? parsed as Record<string, unknown> : null;
-    } catch { /* ignore */ }
+      result =
+        parsed && typeof parsed === "object"
+          ? (parsed as Record<string, unknown>)
+          : null;
+    } catch {
+      /* ignore */
+    }
   }
   return {
     deviceId,
@@ -495,18 +712,25 @@ export interface DeviceState {
 }
 
 export async function getDeviceState(deviceId: string): Promise<DeviceState> {
-  const result = await dynamoClient.send(new QueryCommand({
-    TableName: COMMANDS_TABLE,
-    KeyConditionExpression: "deviceId = :deviceId AND commandId = :sk",
-    ExpressionAttributeValues: {
-      ":deviceId": { S: deviceId },
-      ":sk": { S: await ownershipKey(deviceId, STATE_SORT_KEY) },
-    },
-    Limit: 1,
-  }));
+  const result = await dynamoClient.send(
+    new QueryCommand({
+      TableName: COMMANDS_TABLE,
+      KeyConditionExpression: "deviceId = :deviceId AND commandId = :sk",
+      ExpressionAttributeValues: {
+        ":deviceId": { S: deviceId },
+        ":sk": { S: await ownershipKey(deviceId, STATE_SORT_KEY) },
+      },
+      Limit: 1,
+    }),
+  );
   const item = result.Items?.[0];
   if (!item) {
-    return { deviceId, led: { on: false, brightness: 0 }, lastSeenAt: null, updatedAt: "" };
+    return {
+      deviceId,
+      led: { on: false, brightness: 0 },
+      lastSeenAt: null,
+      updatedAt: "",
+    };
   }
   return {
     deviceId,
@@ -523,17 +747,32 @@ export async function setDeviceState(
   deviceId: string,
   led: { on: boolean; brightness: number },
   lastSeenAt: string | null = null,
+  expectedDevice?: Device,
 ): Promise<void> {
   const now = new Date().toISOString();
+  const snapshot = expectedDevice ?? (await getDevice(deviceId));
+  if (!snapshot) throw new Error("device not found");
   const item: Record<string, AttributeValue> = {
     deviceId: { S: deviceId },
-    commandId: { S: await ownershipKey(deviceId, STATE_SORT_KEY) },
+    commandId: {
+      S:
+        snapshot.ownershipVersion && snapshot.ownershipVersion !== "legacy"
+          ? `${STATE_SORT_KEY}#${snapshot.ownershipVersion}`
+          : STATE_SORT_KEY,
+    },
     ledOn: { BOOL: led.on },
     ledBrightness: { N: String(led.brightness) },
     updatedAt: { S: now },
   };
   if (lastSeenAt) item.lastSeenAt = { S: lastSeenAt };
-  await dynamoClient.send(new PutItemCommand({ TableName: COMMANDS_TABLE, Item: item }));
+  await dynamoClient.send(
+    new TransactWriteItemsCommand({
+      TransactItems: [
+        { ConditionCheck: registryCondition(snapshot) },
+        { Put: { TableName: COMMANDS_TABLE, Item: item } },
+      ],
+    }),
+  );
 }
 
 const NOTECARD_TELEMETRY_SORT_KEY = "telemetry#notecard#latest";
@@ -548,6 +787,7 @@ export interface NotecardTelemetry {
   humidity: number | null;
   pressure: number | null;
   pressureUnit?: "hPa" | "unknown";
+  captureKnown?: boolean;
   measurementAt?: string | null;
   temperatureAt?: string | null;
   humidityAt?: string | null;
@@ -604,17 +844,24 @@ export async function setNotecardTelemetry(
   }
   const latestKey = {
     deviceId: { S: telemetry.deviceId },
-    commandId: { S: await ownershipKey(telemetry.deviceId, NOTECARD_TELEMETRY_SORT_KEY) },
+    commandId: {
+      S: await ownershipKey(telemetry.deviceId, NOTECARD_TELEMETRY_SORT_KEY),
+    },
   };
   try {
-    await dynamoClient.send(new UpdateItemCommand({
-      TableName: COMMANDS_TABLE,
-      Key: latestKey,
-      UpdateExpression: `SET ${heartbeatExpressions.join(", ")}`,
-      ...(Object.keys(heartbeatNames).length ? { ExpressionAttributeNames: heartbeatNames } : {}),
-      ExpressionAttributeValues: heartbeatValues,
-      ConditionExpression: "attribute_not_exists(capturedAt) OR capturedAt <= :capturedAt",
-    }));
+    await dynamoClient.send(
+      new UpdateItemCommand({
+        TableName: COMMANDS_TABLE,
+        Key: latestKey,
+        UpdateExpression: `SET ${heartbeatExpressions.join(", ")}`,
+        ...(Object.keys(heartbeatNames).length
+          ? { ExpressionAttributeNames: heartbeatNames }
+          : {}),
+        ExpressionAttributeValues: heartbeatValues,
+        ConditionExpression:
+          "attribute_not_exists(capturedAt) OR capturedAt <= :capturedAt",
+      }),
+    );
   } catch (error) {
     if (!(error instanceof ConditionalCheckFailedException)) throw error;
   }
@@ -629,17 +876,40 @@ export async function setNotecardTelemetry(
   for (const [field, value] of Object.entries(measurements)) {
     if (value == null) continue;
     try {
-      await dynamoClient.send(new UpdateItemCommand({ TableName: COMMANDS_TABLE, Key: latestKey,
-        UpdateExpression: `SET #value = :value, #observed = :at, updatedAt = :now${field === "pressure" ? ", pressureUnit = :unit" : ""}`,
-        ConditionExpression: "attribute_not_exists(#observed) OR #observed <= :at",
-        ExpressionAttributeNames: { "#value": field, "#observed": `${field}At` },
-        ExpressionAttributeValues: { ":value": { N: String(value) }, ":at": { S: telemetry.capturedAt }, ":now": { S: updatedAt },
-          ...(field === "pressure" ? { ":unit": { S: telemetry.pressureUnit ?? "unknown" } } : {}) },
-      }));
-    } catch (error) { if (!(error instanceof ConditionalCheckFailedException)) throw error; }
+      await dynamoClient.send(
+        new UpdateItemCommand({
+          TableName: COMMANDS_TABLE,
+          Key: latestKey,
+          UpdateExpression: `SET #value = :value, #observed = :at, #ordered = :ordered, updatedAt = :now${field === "pressure" ? ", pressureUnit = :unit" : ""}`,
+          ConditionExpression:
+            "(attribute_not_exists(#ordered) AND (attribute_not_exists(#observed) OR #observed <= :ordered)) OR #ordered <= :ordered",
+          ExpressionAttributeNames: {
+            "#value": field,
+            "#observed": `${field}At`,
+            "#ordered": `${field}OrderAt`,
+          },
+          ExpressionAttributeValues: {
+            ":value": { N: String(value) },
+            ":at": {
+              S: telemetry.captureKnown === false ? "" : telemetry.capturedAt,
+            },
+            ":ordered": { S: telemetry.capturedAt },
+            ":now": { S: updatedAt },
+            ...(field === "pressure"
+              ? { ":unit": { S: telemetry.pressureUnit ?? "unknown" } }
+              : {}),
+          },
+        }),
+      );
+    } catch (error) {
+      if (!(error instanceof ConditionalCheckFailedException)) throw error;
+    }
   }
 
-  const safeFile = (telemetry.sourceFile ?? "event").replace(/[^a-zA-Z0-9._-]/g, "_");
+  const safeFile = (telemetry.sourceFile ?? "event").replace(
+    /[^a-zA-Z0-9._-]/g,
+    "_",
+  );
   const eventItem: Record<string, AttributeValue> = {
     deviceId: { S: telemetry.deviceId },
     commandId: {
@@ -649,7 +919,11 @@ export async function setNotecardTelemetry(
     receivedAt: { S: telemetry.receivedAt },
     updatedAt: { S: updatedAt },
     pressureUnit: { S: telemetry.pressureUnit ?? "unknown" },
-    expiresAt: { N: String(Math.floor(Date.now() / 1000) + NOTECARD_HISTORY_RETENTION_SECONDS) },
+    expiresAt: {
+      N: String(
+        Math.floor(Date.now() / 1000) + NOTECARD_HISTORY_RETENTION_SECONDS,
+      ),
+    },
   };
   for (const [key, value] of Object.entries({
     temperature: telemetry.temperature,
@@ -661,7 +935,12 @@ export async function setNotecardTelemetry(
     lng: telemetry.lng,
     locationAccuracy: telemetry.locationAccuracy,
   })) {
-    if (value != null) { eventItem[key] = { N: String(value) }; eventItem[`${key}At`] = { S: telemetry.capturedAt }; }
+    if (value != null) {
+      eventItem[key] = { N: String(value) };
+      eventItem[`${key}At`] = {
+        S: telemetry.captureKnown === false ? "" : telemetry.capturedAt,
+      };
+    }
   }
   for (const [key, value] of Object.entries({
     deviceStatus: telemetry.deviceStatus,
@@ -671,7 +950,9 @@ export async function setNotecardTelemetry(
   })) {
     if (value) eventItem[key] = { S: value };
   }
-  await dynamoClient.send(new PutItemCommand({ TableName: COMMANDS_TABLE, Item: eventItem }));
+  await dynamoClient.send(
+    new PutItemCommand({ TableName: COMMANDS_TABLE, Item: eventItem }),
+  );
 }
 
 function parseNotecardTelemetryItem(
@@ -682,39 +963,53 @@ function parseNotecardTelemetryItem(
     deviceId,
     capturedAt: item.capturedAt?.S ?? "",
     receivedAt: item.receivedAt?.S ?? "",
-    temperature: item.temperature?.N == null ? null : Number(item.temperature.N),
+    temperature:
+      item.temperature?.N == null ? null : Number(item.temperature.N),
     humidity: item.humidity?.N == null ? null : Number(item.humidity.N),
     pressure: item.pressure?.N == null ? null : Number(item.pressure.N),
     pressureUnit: item.pressureUnit?.S === "hPa" ? "hPa" : "unknown",
-    measurementAt: ["temperature", "humidity", "pressure", "batteryVoltage", "motion"].map(field => item[`${field}At`]?.S).filter((value): value is string => Boolean(value)).sort().at(-1) ?? item.measurementAt?.S ?? null,
+    measurementAt:
+      ["temperature", "humidity", "pressure", "batteryVoltage", "motion"]
+        .map((field) => item[`${field}At`]?.S)
+        .filter((value): value is string => Boolean(value))
+        .sort()
+        .at(-1) ??
+      item.measurementAt?.S ??
+      null,
     temperatureAt: item.temperatureAt?.S ?? null,
     humidityAt: item.humidityAt?.S ?? null,
     pressureAt: item.pressureAt?.S ?? null,
     batteryVoltageAt: item.batteryVoltageAt?.S ?? null,
     motionAt: item.motionAt?.S ?? null,
-    batteryVoltage: item.batteryVoltage?.N == null ? null : Number(item.batteryVoltage.N),
+    batteryVoltage:
+      item.batteryVoltage?.N == null ? null : Number(item.batteryVoltage.N),
     motion: item.motion?.N == null ? null : Number(item.motion.N),
     deviceStatus: item.deviceStatus?.S ?? null,
     transport: item.transport?.S ?? null,
     lat: item.lat?.N == null ? null : Number(item.lat.N),
     lng: item.lng?.N == null ? null : Number(item.lng.N),
-    locationAccuracy: item.locationAccuracy?.N == null ? null : Number(item.locationAccuracy.N),
+    locationAccuracy:
+      item.locationAccuracy?.N == null ? null : Number(item.locationAccuracy.N),
     locationSource: item.locationSource?.S ?? null,
     sourceFile: item.sourceFile?.S ?? null,
     updatedAt: item.updatedAt?.S ?? "",
   };
 }
 
-export async function getNotecardTelemetry(deviceId: string): Promise<NotecardTelemetry | null> {
-  const result = await dynamoClient.send(new QueryCommand({
-    TableName: COMMANDS_TABLE,
-    KeyConditionExpression: "deviceId = :deviceId AND commandId = :sk",
-    ExpressionAttributeValues: {
-      ":deviceId": { S: deviceId },
-      ":sk": { S: await ownershipKey(deviceId, NOTECARD_TELEMETRY_SORT_KEY) },
-    },
-    Limit: 1,
-  }));
+export async function getNotecardTelemetry(
+  deviceId: string,
+): Promise<NotecardTelemetry | null> {
+  const result = await dynamoClient.send(
+    new QueryCommand({
+      TableName: COMMANDS_TABLE,
+      KeyConditionExpression: "deviceId = :deviceId AND commandId = :sk",
+      ExpressionAttributeValues: {
+        ":deviceId": { S: deviceId },
+        ":sk": { S: await ownershipKey(deviceId, NOTECARD_TELEMETRY_SORT_KEY) },
+      },
+      Limit: 1,
+    }),
+  );
   const item = result.Items?.[0];
   if (!item) return null;
   return parseNotecardTelemetryItem(deviceId, item);
@@ -724,15 +1019,22 @@ export async function getNotecardTelemetryHistory(
   deviceId: string,
   limit = 120,
 ): Promise<NotecardTelemetry[]> {
-  const result = await dynamoClient.send(new QueryCommand({
-    TableName: COMMANDS_TABLE,
-    KeyConditionExpression: "deviceId = :deviceId AND begins_with(commandId, :prefix)",
-    ExpressionAttributeValues: {
-      ":deviceId": { S: deviceId },
-      ":prefix": { S: await ownershipKey(deviceId, NOTECARD_TELEMETRY_EVENT_PREFIX) },
-    },
-    ScanIndexForward: false,
-    Limit: Math.min(Math.max(limit, 1), 500),
-  }));
-  return (result.Items ?? []).map((item) => parseNotecardTelemetryItem(deviceId, item));
+  const result = await dynamoClient.send(
+    new QueryCommand({
+      TableName: COMMANDS_TABLE,
+      KeyConditionExpression:
+        "deviceId = :deviceId AND begins_with(commandId, :prefix)",
+      ExpressionAttributeValues: {
+        ":deviceId": { S: deviceId },
+        ":prefix": {
+          S: await ownershipKey(deviceId, NOTECARD_TELEMETRY_EVENT_PREFIX),
+        },
+      },
+      ScanIndexForward: false,
+      Limit: Math.min(Math.max(limit, 1), 500),
+    }),
+  );
+  return (result.Items ?? []).map((item) =>
+    parseNotecardTelemetryItem(deviceId, item),
+  );
 }

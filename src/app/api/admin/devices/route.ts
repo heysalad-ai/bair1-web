@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { ConditionalCheckFailedException } from "@aws-sdk/client-dynamodb";
 import { requireRole } from "@/lib/auth";
 import {
@@ -26,12 +27,13 @@ export async function POST(request: Request) {
   if (!deviceId || !name) {
     return Response.json(
       { error: "deviceId and name required" },
-      { status: 400 }
+      { status: 400 },
     );
   }
 
   const device: Device = {
     deviceId,
+    ownershipVersion: randomUUID(),
     name,
     location: location ?? "",
     lat: lat ?? null,
@@ -42,9 +44,14 @@ export async function POST(request: Request) {
     createdAt: new Date().toISOString(),
   };
 
-  try { await createDevice(device, true); }
-  catch (error) {
-    if (error instanceof ConditionalCheckFailedException) return Response.json({ error: "device already registered" }, { status: 409 });
+  try {
+    await createDevice(device, true);
+  } catch (error) {
+    if (error instanceof ConditionalCheckFailedException)
+      return Response.json(
+        { error: "device already registered" },
+        { status: 409 },
+      );
     throw error;
   }
   return Response.json({ ok: true, device });
@@ -61,7 +68,11 @@ export async function PATCH(request: Request) {
     return Response.json({ error: "deviceId required" }, { status: 400 });
   }
 
-  if (updates.ownerId !== undefined || updates.orgId !== undefined) return Response.json({ error: "ownership transfers require a reviewed history migration" }, { status: 409 });
+  if (updates.ownerId !== undefined || updates.orgId !== undefined)
+    return Response.json(
+      { error: "ownership transfers require a reviewed history migration" },
+      { status: 409 },
+    );
   await updateDevice(deviceId, updates);
   return Response.json({ ok: true });
 }

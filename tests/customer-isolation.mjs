@@ -55,6 +55,7 @@ function load(rel, overrides = {}) {
     '@/lib/devices': devices, './devices': devices,
     '@/lib/dynamo': dynamo, './dynamo': dynamo,
     '@/lib/google-env': google,
+    '@/lib/usage-budget': { usageGate: async () => null },
     '@/lib/openai': { GPT_5_6_MODEL: 'synthetic-model' },
     '@/lib/public-feeds': { getPublicFeedSnapshot: async () => null },
     '@/lib/aqi': { getAqiState: () => ({ level: 'synthetic', guidance: ['Synthetic fixture'] }) },
@@ -134,7 +135,7 @@ await probe('Anonymous private chat fails before reaching any data/model tool', 
       streamText: options => { capturedChat = options; return { toUIMessageStreamResponse: () => new Response('synthetic stream') }; } },
     '@ai-sdk/openai': { openai: () => ({ synthetic: true }) },
   });
-  const res = await route.POST(request('POST', { messages: [] }, 'anonymous'));
+  const res = await route.POST(request('POST', { deviceId: deviceA.deviceId, messages: [{ role: 'user', parts: [{ type: 'text', text: 'Synthetic question' }] }] }, 'anonymous'));
   assert.equal(res.status, 401); assert.equal(capturedChat, null); assert.equal(readCount, 0);
 });
 await probe('Anonymous voice briefing fails before reading a supplied device', 'isolation-gap', async () => {
@@ -150,13 +151,14 @@ await probe('An authenticated AI tool cannot query another owner and lists only 
       streamText: options => { capturedChat = options; return { toUIMessageStreamResponse: () => new Response('synthetic stream') }; } },
     '@ai-sdk/openai': { openai: () => ({ synthetic: true }) },
   });
-  assert.equal((await route.POST(request('POST', { messages: [] }))).status, 200);
+  assert.equal((await route.POST(request('POST', { deviceId: deviceA.deviceId, messages: [{ role: 'user', parts: [{ type: 'text', text: 'Synthetic question' }] }] }))).status, 200);
   const listed = await capturedChat.tools.listDevices.execute({});
   assert.deepEqual(listed.map(d => d.deviceId), [deviceA.deviceId]);
   assert.equal((await capturedChat.tools.getSensorData.execute({ deviceId: deviceB.deviceId })).error, 'device not found');
   assert.equal((await capturedChat.tools.getSensorHistory.execute({ deviceId: deviceB.deviceId, hoursBack: 1 })).error, 'device not found');
   assert.equal(readCount, 0);
-  assert.equal((await capturedChat.tools.getSensorData.execute({ deviceId: deviceA.deviceId })).deviceId, deviceA.deviceId);
+  const dto = await capturedChat.tools.getSensorData.execute({ deviceId: deviceA.deviceId });
+  assert.equal(dto.pm25, 7); assert.equal(dto.deviceId, undefined); assert.equal(dto.lat, undefined);
 });
 await probe('Owner command creation succeeds while ack/status reject another owner', '', async () => {
   const own = load('src/app/api/v1/devices/[deviceId]/commands/route.ts');
@@ -191,7 +193,7 @@ await probe('Public latest only queries explicitly published devices', '', async
   const res = await route.GET();
   assert.equal(res.status, 200); assert.equal((await res.json()).deviceId, deviceA.deviceId);
 });
-test('New personal users do not join a shared default or migrate unverified email', async (t) => {
+test('New personal users do not inherit history or roles through either verified or unverified email', async (t) => {
   const originalFetch = globalThis.fetch; t.after(() => { globalThis.fetch = originalFetch; });
   const sub = randomUUID(); let saved; let emailLookups = 0;
   globalThis.fetch = async () => Response.json({ sub, email: 'fixture@example.invalid', email_verified: false });
@@ -199,6 +201,24 @@ test('New personal users do not join a shared default or migrate unverified emai
     getUser: async () => null, getUserByEmail: async () => { emailLookups++; return null; },
     upsertUser: async user => { saved = user; },
   } })('src/lib/auth.ts');
-  await realAuth.getOrCreateUser(randomUUID());
-  assert.ok(saved.orgId.startsWith('personal:')); assert.equal(saved.role, 'user'); assert.equal(emailLookups, 0);
+  for (const email_verified of [false, true]) {
+    globalThis.fetch = async () => Response.json({ sub, email: 'fixture@example.invalid', email_verified });
+    await realAuth.getOrCreateUser(randomUUID());
+    assert.ok(saved.orgId.startsWith('personal:')); assert.equal(saved.role, 'user'); assert.equal(emailLookups, 0);
+  }
+});
+await probe('An owner cannot move retained device history into another workspace without a migration', '', async()=>{
+ rows.set(deviceA.deviceId,{...deviceA,orgId:'workspace:'+randomUUID()});
+ const route=load('src/app/api/developer/devices/route.ts');
+ const response=await route.PATCH(request('PATCH',{deviceId:deviceA.deviceId,workspaceId:'workspace:'+randomUUID(),visibility:'workspace'}));
+ assert.equal(response.status,409);assert.match((await response.json()).error,/history migration/);
+});
+await probe('Voice with no device location never invents environmental context from a default coordinate', '', async()=>{
+ const previous=process.env.ELEVENLABS_API_KEY;process.env.ELEVENLABS_API_KEY='';let providerCalls=0;
+ try{
+  const unexpected=async()=>{providerCalls++;throw new Error('No location was supplied');};
+  const route=load('src/app/api/voice/briefing/route.ts',{'@/lib/google-env':{getAirQuality:unexpected,getWeather:unexpected,getPollenForecast:unexpected}});
+  const response=await route.GET(new (require('next/server.js').NextRequest)(`https://synthetic.invalid/api/voice/briefing?deviceId=${deviceA.deviceId}`,{headers:{authorization:'Bearer synthetic-session'}}));
+  assert.equal(response.status,200);assert.equal(providerCalls,0);assert.equal((await response.json()).audio,null);
+ }finally{if(previous===undefined)delete process.env.ELEVENLABS_API_KEY;else process.env.ELEVENLABS_API_KEY=previous;}
 });

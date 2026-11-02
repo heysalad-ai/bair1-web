@@ -1,5 +1,6 @@
 "use client";
 
+import { useAuthenticatedFetch } from "@/lib/use-authenticated-fetch";
 import { useState, useEffect } from "react";
 
 interface EnvData {
@@ -16,20 +17,21 @@ interface Props {
 }
 
 export default function EnvironmentCards({ lat, lng }: Props) {
+  const authenticatedFetch = useAuthenticatedFetch();
   const [data, setData] = useState<EnvData | null>(null);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     if (lat == null || lng == null) return;
     setLoading(true);
-    fetch(`/api/environment?lat=${lat}&lng=${lng}`)
+    authenticatedFetch(`/api/environment?lat=${lat}&lng=${lng}`)
       .then((r) => r.json())
       .then(setData)
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [lat, lng]);
+  }, [lat, lng, authenticatedFetch]);
 
-  if (!lat || !lng) {
+  if (lat == null || lng == null) {
     return (
       <div className="bg-surface border border-border rounded-xl p-4 text-center">
         <p className="text-xs text-muted">Waiting for sensor location...</p>

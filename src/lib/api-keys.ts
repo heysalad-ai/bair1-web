@@ -173,7 +173,7 @@ export async function validateApiKey(
   key: string | null,
   requiredScopes: ApiKeyScope[] = [],
 ): Promise<ApiKeyPrincipal | null> {
-  if (!key) return null;
+  if (!key || key.length > 256) return null;
   if (process.env.SENSOR_API_KEY && key === process.env.SENSOR_API_KEY) {
     return {
       type: "system",
@@ -190,8 +190,13 @@ export async function validateApiKey(
     ExpressionAttributeValues: { ":keyHash": { S: hashKey(key) } },
     Limit: 1,
   }));
-  const item = result.Items?.[0];
-  if (!item) return null;
+  const indexed = result.Items?.[0];
+  if (!indexed?.id?.S) return null;
+  // GSI replication can lag revocation. Authorization uses the base record.
+  const { Item: item } = await dynamoClient.send(new GetItemCommand({
+    TableName: TABLE, Key: { id: indexed.id }, ConsistentRead: true,
+  }));
+  if (!item || item.keyHash?.S !== indexed.keyHash?.S) return null;
 
   const record = parseItem(item);
   if (record.revokedAt || !requiredScopes.every((scope) => record.scopes.includes(scope))) {
