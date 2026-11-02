@@ -114,8 +114,8 @@ export async function createDevice(
     ownershipVersion: { S: device.ownershipVersion ?? "legacy" },
     name: { S: device.name },
     location: { S: device.location },
-    ownerId: { S: device.ownerId },
-    orgId: { S: device.orgId },
+    ...(device.ownerId ? { ownerId: { S: device.ownerId } } : {}),
+    ...(device.orgId ? { orgId: { S: device.orgId } } : {}),
     status: { S: device.status },
     createdAt: { S: device.createdAt || new Date().toISOString() },
   };

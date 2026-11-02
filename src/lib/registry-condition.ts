@@ -8,9 +8,10 @@ export function registryCondition(
     TableName: storageTable("bair1-devices"),
     Key: { deviceId: { S: device.deviceId } },
     ConditionExpression:
-      "ownerId = :owner AND (ownershipVersion = :version OR (attribute_not_exists(ownershipVersion) AND :version = :legacy))",
+      "(ownerId = :owner OR (attribute_not_exists(ownerId) AND :owner = :empty)) AND (ownershipVersion = :version OR (attribute_not_exists(ownershipVersion) AND :version = :legacy))",
     ExpressionAttributeValues: {
       ":owner": { S: device.ownerId },
+      ":empty": { S: "" },
       ":version": { S: device.ownershipVersion ?? "legacy" },
       ":legacy": { S: "legacy" },
     },
