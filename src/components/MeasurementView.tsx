@@ -1,8 +1,17 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import {
+  Line,
+  LineChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 import { useAuthenticatedFetch } from "@/lib/use-authenticated-fetch";
 import {
+  historySeries,
   measurementFields,
   measurementFreshness,
   observationLabel,
@@ -46,48 +55,60 @@ export function MeasurementView({
             : measurementFreshness(timestamp as string, now)}
         </span>
       </div>
-      {!reading && !telemetry && (
+      {!hasValues && (
         <p className="py-8 text-muted">
           Waiting for the first measurement. The device is registered; no values
           have been invented.
         </p>
       )}
       <dl className="grid grid-cols-2 gap-x-6 sm:grid-cols-3 xl:grid-cols-4">
-        {measurementFields.map((field) => {
-          const deviceValue = reading?.[field.field];
-          const fromTelemetry =
-            deviceValue == null && telemetry?.[field.field] != null;
-          const value = fromTelemetry ? telemetry?.[field.field] : deviceValue;
-          const unknownPressure =
-            field.field === "pressure" &&
-            fromTelemetry &&
-            telemetry?.pressureUnit !== "hPa";
-          const measuredAt = fromTelemetry
-            ? telemetry?.[`${field.field}At`]
-            : timestamp;
-          return (
-            <div key={field.field} className="border-b border-border py-5">
-              <dt className="text-sm text-muted">{field.label}</dt>
-              <dd className="mt-2 text-2xl font-medium tabular-nums">
-                {typeof value === "number" && !unknownPressure
-                  ? value.toFixed(field.digits)
-                  : "—"}
-                <span className="ml-1 text-xs font-normal text-muted">
-                  {field.unit}
-                </span>
-              </dd>
-              <dd className="mt-1 text-xs text-muted">
-                {unknownPressure
-                  ? "Unit unconfirmed"
-                  : value == null
-                    ? "Not reported"
-                    : !measuredAt
-                      ? "Capture time unknown"
-                      : observationLabel(measuredAt as string, now)}
-              </dd>
-            </div>
-          );
-        })}
+        {[...measurementFields]
+          .sort(
+            (a, b) =>
+              Number(
+                reading?.[b.field] != null || telemetry?.[b.field] != null,
+              ) -
+              Number(
+                reading?.[a.field] != null || telemetry?.[a.field] != null,
+              ),
+          )
+          .map((field) => {
+            const deviceValue = reading?.[field.field];
+            const fromTelemetry =
+              deviceValue == null && telemetry?.[field.field] != null;
+            const value = fromTelemetry
+              ? telemetry?.[field.field]
+              : deviceValue;
+            const unknownPressure =
+              field.field === "pressure" &&
+              fromTelemetry &&
+              telemetry?.pressureUnit !== "hPa";
+            const measuredAt = fromTelemetry
+              ? telemetry?.[`${field.field}At`]
+              : reading?.capturedAt;
+            return (
+              <div key={field.field} className="border-b border-border py-5">
+                <dt className="text-sm text-muted">{field.label}</dt>
+                <dd className="mt-2 text-2xl font-medium tabular-nums">
+                  {typeof value === "number" && !unknownPressure
+                    ? value.toFixed(field.digits)
+                    : "—"}
+                  <span className="ml-1 text-xs font-normal text-muted">
+                    {field.unit}
+                  </span>
+                </dd>
+                <dd className="mt-1 text-xs text-muted">
+                  {unknownPressure
+                    ? "Unit unconfirmed"
+                    : value == null
+                      ? "Not reported"
+                      : !measuredAt
+                        ? "Capture time unknown"
+                        : observationLabel(measuredAt as string, now)}
+                </dd>
+              </div>
+            );
+          })}
       </dl>
       <div className="mt-6 space-y-2 text-sm text-muted">
         <p>
@@ -136,6 +157,8 @@ export function ReadingHistory({ deviceId }: { deviceId: string }) {
     from: new Date(Date.now() - 86400000).toISOString().slice(0, 16),
     to: new Date().toISOString().slice(0, 16),
   }));
+  const chart = useMemo(() => historySeries(rows, field), [rows, field]);
+  const selectedField = measurementFields.find((item) => item.field === field);
   async function load(append = false) {
     setBusy(true);
     setError("");
@@ -217,6 +240,7 @@ export function ReadingHistory({ deviceId }: { deviceId: string }) {
           <input
             required
             type="datetime-local"
+            disabled={busy}
             value={range.from}
             onChange={(e) => {
               setRange({ ...range, from: e.target.value });
@@ -232,6 +256,7 @@ export function ReadingHistory({ deviceId }: { deviceId: string }) {
           <input
             required
             type="datetime-local"
+            disabled={busy}
             value={range.to}
             onChange={(e) => {
               setRange({ ...range, to: e.target.value });
@@ -279,11 +304,60 @@ export function ReadingHistory({ deviceId }: { deviceId: string }) {
             {rows.length} records loaded
             {cursor ? "; more available" : "; end of selected range"}.
           </p>
+          {rows.length > 0 && (
+            <figure className="my-6">
+              <figcaption className="mb-3 text-sm text-muted">
+                {selectedField?.label} ({selectedField?.unit}) · recorded time
+                (UTC). Lines break at missing values or gaps over five minutes.
+              </figcaption>
+              <div
+                className="h-64 w-full"
+                role="img"
+                aria-label={`${selectedField?.label} history; the accessible data table follows`}
+              >
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart
+                    data={chart}
+                    margin={{ left: 8, right: 16, top: 12, bottom: 12 }}
+                  >
+                    <XAxis
+                      dataKey="time"
+                      type="number"
+                      domain={["dataMin", "dataMax"]}
+                      tickFormatter={(value) =>
+                        new Date(value).toISOString().slice(11, 16)
+                      }
+                    />
+                    <YAxis width={48} domain={["auto", "auto"]} />
+                    <Tooltip
+                      labelFormatter={(value) =>
+                        Number.isFinite(Number(value))
+                          ? new Date(Number(value)).toISOString()
+                          : "Time unknown"
+                      }
+                    />
+                    <Line
+                      type="linear"
+                      dataKey="value"
+                      name={selectedField?.label}
+                      unit={` ${selectedField?.unit ?? ""}`}
+                      stroke="#8dc44a"
+                      strokeWidth={2}
+                      dot={{ r: 3 }}
+                      activeDot={{ r: 5 }}
+                      connectNulls={false}
+                      isAnimationActive={false}
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            </figure>
+          )}
           <div className="max-h-[480px] overflow-auto">
             <table className="w-full text-left text-sm tabular-nums">
               <thead className="sticky top-0 bg-bg">
                 <tr>
-                  <th className="p-3">Captured (UTC)</th>
+                  <th className="p-3">Recorded (UTC)</th>
                   <th className="p-3">Value</th>
                   <th className="p-3">Clock quality</th>
                 </tr>

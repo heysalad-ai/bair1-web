@@ -18,6 +18,7 @@ import {
 import { requireAuth } from "@/lib/auth";
 import {
   withDeviceRead,
+  DeviceAccessChanged,
   canAccessDevice,
   accessibleDevices,
   hasPlatformAccess,
@@ -36,7 +37,29 @@ async function requireDeviceAccess(actor: Actor, deviceId: string) {
   if (hasFullAccess(actor)) return;
   const device = await getDevice(deviceId);
   if (!device || !(await canAccessDevice(actor, device))) {
-    throw new GraphQLError("device not found");
+    throw new GraphQLError("device not found", {
+      extensions: { code: "NOT_FOUND" },
+    });
+  }
+}
+
+async function readGraphDevice<T>(
+  actor: Actor,
+  deviceId: string,
+  read: () => Promise<T>,
+): Promise<T> {
+  try {
+    return await withDeviceRead(actor, deviceId, read);
+  } catch (error) {
+    if (error instanceof DeviceAccessChanged)
+      throw new GraphQLError("device not found", {
+        extensions: { code: "NOT_FOUND" },
+      });
+    if (error instanceof RangeError)
+      throw new GraphQLError(error.message, {
+        extensions: { code: "BAD_USER_INPUT" },
+      });
+    throw error;
   }
 }
 
@@ -209,7 +232,7 @@ const schema = createSchema<GraphqlContext>({
       readingPage: async (_parent, args, context) => {
         await requireDeviceAccess(context.actor, args.deviceId);
         try {
-          return await withDeviceRead(context.actor, args.deviceId, () =>
+          return await readGraphDevice(context.actor, args.deviceId, () =>
             getReadingPage(args.deviceId, args),
           );
         } catch (error) {
@@ -233,13 +256,13 @@ const schema = createSchema<GraphqlContext>({
       },
       readings: async (_parent, args, context) => {
         await requireDeviceAccess(context.actor, args.deviceId);
-        return withDeviceRead(context.actor, args.deviceId, () =>
+        return readGraphDevice(context.actor, args.deviceId, () =>
           getReadings(args.deviceId, args.limit ?? 100),
         );
       },
       latestReading: async (_parent, args, context) => {
         await requireDeviceAccess(context.actor, args.deviceId);
-        return withDeviceRead(context.actor, args.deviceId, () =>
+        return readGraphDevice(context.actor, args.deviceId, () =>
           getLatestReading(args.deviceId),
         );
       },
@@ -253,7 +276,7 @@ const schema = createSchema<GraphqlContext>({
       },
       timeSeries: async (_parent, args, context) => {
         await requireDeviceAccess(context.actor, args.deviceId);
-        const readings = await withDeviceRead(
+        const readings = await readGraphDevice(
           context.actor,
           args.deviceId,
           () => getReadingsInRange(args.deviceId, args.from, args.to),
@@ -269,7 +292,7 @@ const schema = createSchema<GraphqlContext>({
       },
       locationTrail: async (_parent, args, context) => {
         await requireDeviceAccess(context.actor, args.deviceId);
-        const readings = await withDeviceRead(
+        const readings = await readGraphDevice(
           context.actor,
           args.deviceId,
           () => getReadingsInRange(args.deviceId, args.from, args.to),
@@ -286,7 +309,7 @@ const schema = createSchema<GraphqlContext>({
       },
       notecardTelemetry: async (_parent, args, context) => {
         await requireDeviceAccess(context.actor, args.deviceId);
-        const telemetry = await withDeviceRead(
+        const telemetry = await readGraphDevice(
           context.actor,
           args.deviceId,
           () => getNotecardTelemetry(args.deviceId),
@@ -300,8 +323,10 @@ const schema = createSchema<GraphqlContext>({
       },
       notecardTelemetryHistory: async (_parent, args, context) => {
         await requireDeviceAccess(context.actor, args.deviceId);
-        const history = await withDeviceRead(context.actor, args.deviceId, () =>
-          getNotecardTelemetryHistory(args.deviceId, args.limit ?? 120),
+        const history = await readGraphDevice(
+          context.actor,
+          args.deviceId,
+          () => getNotecardTelemetryHistory(args.deviceId, args.limit ?? 120),
         );
         return history.map((telemetry) => ({
           ...telemetry,
@@ -324,7 +349,7 @@ const schema = createSchema<GraphqlContext>({
         return permissions.filter((_, index) => allowed[index]);
       },
       latestReading: async (parent: Device, _args, context) => {
-        return withDeviceRead(context.actor, parent.deviceId, () =>
+        return readGraphDevice(context.actor, parent.deviceId, () =>
           getLatestReading(parent.deviceId),
         );
       },
