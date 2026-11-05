@@ -139,8 +139,8 @@ export default function FirmwarePage() {
                     <p className="mt-1 text-sm font-semibold text-ink">{target.version}</p>
                   </div>
                   <div className="rounded-lg border border-border bg-bg px-4 py-3">
-                    <p className="text-xs uppercase tracking-[0.16em] text-muted/70">PlatformIO</p>
-                    <p className="mt-1 text-sm font-semibold text-ink">{target.platformioEnv}</p>
+                    <p className="text-xs uppercase tracking-[0.16em] text-muted/70">{target.factoryPackage ? "Installation" : "PlatformIO"}</p>
+                    <p className="mt-1 text-sm font-semibold text-ink">{target.factoryPackage ? "Factory USB setup" : target.platformioEnv}</p>
                   </div>
                 </div>
 
@@ -167,14 +167,14 @@ export default function FirmwarePage() {
                       href={target.firmwarePath}
                       className="rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-primary-hover"
                     >
-                      Download Binary
+                      {target.factoryPackage ? "Download factory package" : "Download Binary"}
                     </a>
                   ) : (
                     <span className="rounded-lg border border-border px-4 py-2.5 text-sm font-semibold text-muted">
                       Binary pending
                     </span>
                   )}
-                  <code className="rounded-lg bg-bg px-3 py-2 text-xs text-muted">pio run -e {target.platformioEnv} -t upload</code>
+                  {target.factoryPackage ? <a href="#installer" className="rounded-lg px-3 py-2 text-sm font-semibold text-primary underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary">Use factory USB setup</a> : <code className="rounded-lg bg-bg px-3 py-2 text-xs text-muted">pio run -e {target.platformioEnv} -t upload</code>}
                 </div>
               </article>
             ))}
