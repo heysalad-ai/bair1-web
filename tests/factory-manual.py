@@ -1,5 +1,7 @@
 """Run the real manual USB helper against a serial boundary fake, never hardware."""
 import importlib.util,json,pathlib,secrets,uuid
+import contextlib,io,sys,types
+from unittest.mock import patch
 root=pathlib.Path(__file__).resolve().parent.parent
 spec=importlib.util.spec_from_file_location('factory_usb',root/'scripts/factory_usb.py');helper=importlib.util.module_from_spec(spec);spec.loader.exec_module(helper)
 class Port:
@@ -9,6 +11,8 @@ class Port:
   self.reply={'bair1':'identity' if c['bair1']=='identify' else 'configured','requestId':c['requestId'],'deviceId':self.board,'bootSession':self.boot,'protocolVersion':1,'chip':'ESP32-S3','firmwareVersion':helper.VERSION}
   if c['bair1']=='configure' and self.wrong:self.reply['deviceId']='XIAO-'+secrets.token_hex(6).upper()
  def flush(self):pass
+ def __enter__(self):return self
+ def __exit__(self,*_args):return False
  def readline(self,_limit):
   if self.reply is None:return b''
   result=(json.dumps(self.reply)+'\n').encode();self.reply=None;return result
@@ -25,3 +29,15 @@ port.wrong=True
 try:helper.configure(port,settings);raise AssertionError('Wrong acknowledgment accepted')
 except ValueError:pass
 print('Actual manual helper passed: identity, matching-board configuration, fresh boot binding, wrong-board/server rejection and acknowledgment validation.')
+# pyserial 3.5's Windows backend rejects exclusive=False before opening a port.
+# Execute the real CLI entry point, not only its already-open serial routines.
+opened=Port()
+def windows_serial(*args,**kwargs):
+ if kwargs.get('exclusive') is not None and not kwargs['exclusive']:
+  raise ValueError('win32 only supports exclusive access')
+ assert args==('COM7',115200)
+ return opened
+with patch.dict(sys.modules,{'serial':types.SimpleNamespace(Serial=windows_serial)}), patch.object(sys,'platform','win32'), patch.object(sys,'argv',['factory_usb.py','--port','COM7','--identify']), patch.object(helper.time,'sleep',lambda _:None), contextlib.redirect_stdout(io.StringIO()) as captured:
+ helper.main()
+assert captured.getvalue().strip()==opened.board
+print('Windows serial-open regression passed through the actual helper CLI entry point.')

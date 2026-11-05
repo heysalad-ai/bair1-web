@@ -65,7 +65,7 @@ def main():
     args = parser.parse_args()
     try:
         import serial
-        with serial.Serial(args.port, 115200, timeout=0.5, write_timeout=5, exclusive=sys.platform != "win32") as port:
+        with serial.Serial(args.port, 115200, timeout=0.5, write_timeout=5, exclusive=True) as port:
             time.sleep(2)  # Opening a port can restart an ESP32-S3.
             if args.identify:
                 print(identity(port)["deviceId"])

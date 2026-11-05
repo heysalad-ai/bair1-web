@@ -12,7 +12,7 @@ Registered before implementation on 5 November 2026.
 | Passed requires a fresh receipt from this provisioning session | Tests reject stale/other-session/cross-device/invalid-sensor receipts and configuration races; simulated UI requires new boot session after power cycle | Software pass; physical sensor upload at factory |
 | Usable factory workflow | 1440/390/1280 screenshots, keyboard focus/error/manual recovery, CSV download without credentials; finish reviewer ship after two fixes | Pass on simulated UI |
 | Release remains compatible | 43 default tests, 12 access tests, 13 ingestion tests, restore test, native firmware replies; typecheck/build; lint 0 errors/24 existing warnings; runtime dependency audit 0 | Pass locally |
-| Manufacturer can follow guide | Rendered screenshot PDF matching deployed UI; exact account login and recovery steps | Pending |
+| Manufacturer can follow guide | Eight-page confidential PDF with exact login, seven-day access deadline, screenshots, automatic/manual steps and recovery; all pages visually reviewed and secret/masked geometry compared | Prepared; live release check before delivery |
 
 Software simulations are not evidence of a physical flash or sensor measurement. Record the deployed revision and hardware verification separately.
 
@@ -24,5 +24,6 @@ Software simulations are not evidence of a physical flash or sensor measurement.
 - Native ctags override was required on this Mac; the normal bundled ctags executable has an incompatible CPU architecture. No system toolchain was replaced.
 - Browser flasher: esptool-js 0.7.1 with SHA-256 input checks and MD5 flash verification. It rejects other chip families and protected flash configurations.
 - Manual path: Python 3.10+, esptool 5.3.1, pyserial 3.5. Windows batch entry has verified CRLF and delegates validated COM input to Python without shell interpolation. Actual Windows drivers and physical flashing remain factory acceptance items.
+- Release review found pyserial rejects `exclusive=False` on Windows. A failing regression through the actual helper CLI reproduced this before the fix; `exclusive=True` is now used and the regression passes. The regenerated ZIP contains the corrected helper.
 - Test results are page-memory observations; reports contain no upload key or Wi-Fi password. Reloaded pages can resume a unit and check a fresh receipt again.
 - Factory grant expiry restricts provisioning; it does not automatically revoke existing device upload keys. Revocation remains available through Devices & access.
