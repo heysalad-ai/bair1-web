@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {randomBytes,randomUUID,createHash} from 'node:crypto';
 import {readFileSync} from 'node:fs';
 import {createLoader} from './helpers/load-ts.mjs';
-const load=createLoader({'./factory-release.json':{default:JSON.parse(readFileSync('src/lib/factory-release.json','utf8'))}});
+const load=createLoader({'./factory-sps30-release.json':{default:JSON.parse(readFileSync('src/lib/factory-sps30-release.json','utf8'))},'./factory-release.json':{default:JSON.parse(readFileSync('src/lib/factory-release.json','utf8'))}});
 const protocol=load('src/lib/factory-usb-protocol.ts'),{FactoryUsb}=load('src/lib/factory-usb.ts');
 const board=()=>({deviceId:`XIAO-${randomBytes(6).toString('hex').toUpperCase()}`,bootSession:randomBytes(16).toString('hex').toUpperCase(),firmwareVersion:protocol.FACTORY_FIRMWARE_VERSION,protocolVersion:1,chip:'ESP32-S3'});
 function serial(handler){
@@ -43,7 +43,7 @@ test('browser flasher rejects wrong chip, protected flash and corrupted download
  const mac=[...randomBytes(6)].map(n=>n.toString(16).padStart(2,'0')).join(':');
  class Transport{async disconnect(){closed++;}}
  class Loader{chip={CHIP_NAME:chip,readMac:async()=>mac};async main(){}async getSecurityInfo(){return {parsedFlags:{SECURE_BOOT_EN:protectedFlash,SECURE_DOWNLOAD_ENABLE:false},flashCryptCnt:0};}async after(){}async writeFlash(options){writes++;assert.equal(options.eraseAll,false);assert.equal(options.fileArray.length,4);for(const file of options.fileArray)assert.equal(options.calculateMD5Hash(file.data),createHash('md5').update(file.data).digest('hex'));}}
- const {installFactoryFirmware}=createLoader({'./factory-release.json':{default:manifest},'esptool-js':{Transport,ESPLoader:Loader},'hash-wasm':{createMD5:async()=>{let hash;return{init(){hash=createHash('md5');return this;},update(data){hash.update(data);return this;},digest(){return hash.digest('hex');}};}}})('src/lib/factory-usb.ts');
+ const {installFactoryFirmware}=createLoader({'./factory-release.json':{default:manifest},'./factory-sps30-release.json':{default:JSON.parse(readFileSync('src/lib/factory-sps30-release.json','utf8'))},'esptool-js':{Transport,ESPLoader:Loader},'hash-wasm':{createMD5:async()=>{let hash;return{init(){hash=createHash('md5');return this;},update(data){hash.update(data);return this;},digest(){return hash.digest('hex');}};}}})('src/lib/factory-usb.ts');
  const savedFetch=globalThis.fetch;
  globalThis.fetch=async path=>{const data=readFileSync('public'+path);if(corrupt)data[0]^=1;return new Response(data);};
  try{
@@ -51,5 +51,6 @@ test('browser flasher rejects wrong chip, protected flash and corrupted download
   chip='ESP32-S3';protectedFlash=true;await assert.rejects(installFactoryFirmware({},()=>{}),/protected flash/);assert.equal(writes,0);
   protectedFlash=false;corrupt=true;await assert.rejects(installFactoryFirmware({},()=>{}),/integrity check failed/);assert.equal(writes,0);
   corrupt=false;assert.equal(await installFactoryFirmware({},()=>{}),protocol.deviceIdFromMac(mac));assert.equal(writes,1);assert.equal(closed,4);
+  assert.equal(await installFactoryFirmware({},()=>{},'sps30-i2c'),protocol.deviceIdFromMac(mac));assert.equal(writes,2);
  }finally{globalThis.fetch=savedFetch;}
 });
