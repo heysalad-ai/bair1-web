@@ -9,6 +9,7 @@ export interface FirmwareTarget {
   status: FirmwareStatus;
   updated: string;
   firmwarePath?: string;
+  factoryPackage?: boolean;
   sourcePath: string;
   sensors: string[];
   transports: string[];
@@ -19,6 +20,7 @@ export const firmwareTargets: FirmwareTarget[] = [
   {
     slug: "xiao-esp32s3-sps30",
     name: "SPS30 RevC factory diagnostic",
+    factoryPackage: true,
     board: "Seeed XIAO ESP32S3",
     platformioEnv: "seeed_xiao_esp32s3",
     version: "bair1-xiao-sps30-1.0.0",
