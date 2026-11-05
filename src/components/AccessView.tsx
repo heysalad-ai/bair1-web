@@ -9,14 +9,16 @@ type Share = { id: string; expiresAt: number; revokedAt: string | null };
 export default function AccessView({
   device,
   onChange,
+  mode = "all",
 }: {
   device?: DeviceOption;
   onChange: () => Promise<void>;
+  mode?: "all" | "enroll" | "sharing";
 }) {
   const request = useAuthenticatedFetch();
   const [now] = useState(() => Date.now());
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
-  const [enabled, setEnabled] = useState(false);
+  const [enabled, setEnabled] = useState<boolean | null>(null);
   const [shares, setShares] = useState<Share[]>([]);
   const [members, setMembers] = useState<Member[]>([]);
   const [workspace, setWorkspace] = useState("");
@@ -43,6 +45,7 @@ export default function AccessView({
   }, [call]);
   useEffect(() => {
     let active = true;
+    if (mode === "enroll") return;
     const timer = setTimeout(() => {
       void load().catch((e) => {
         if (active) setStatus(e.message);
@@ -52,13 +55,13 @@ export default function AccessView({
       active = false;
       clearTimeout(timer);
     };
-  }, [load]);
+  }, [load, mode]);
   useEffect(() => {
     let active = true;
     const timer = setTimeout(() => {
       setShares([]);
       setSecret("");
-      if (device?.permissions.includes("share"))
+      if (mode !== "enroll" && device?.permissions.includes("share"))
         void call(`/api/devices/${encodeURIComponent(device.deviceId)}/share`)
           .then((result) => {
             if (active) setShares(result.shares);
@@ -71,7 +74,7 @@ export default function AccessView({
       active = false;
       clearTimeout(timer);
     };
-  }, [device?.deviceId, device?.permissions, call]);
+  }, [device?.deviceId, device?.permissions, call, mode]);
   async function act(action: () => Promise<void>) {
     setBusy(true);
     setStatus("");
@@ -97,72 +100,90 @@ export default function AccessView({
   }
   return (
     <section className="space-y-10">
-      <div>
-        <h1 className="text-3xl font-semibold">Devices & access</h1>
-        <p className="mt-3 max-w-2xl text-sm text-muted">
-          Enrollment proves device possession. Workspace members see only
-          devices explicitly shared with that workspace. Public links can be
-          revoked independently.
+      {mode === "all" && (
+        <div>
+          <h1 className="text-3xl font-semibold">Devices & access</h1>
+        </div>
+      )}
+      {(busy || status) && (
+        <p role="status" aria-live="polite" className="break-words text-sm">
+          {busy ? "Saving…" : status}
         </p>
-      </div>
-      <p role="status" aria-live="polite" className="break-words text-sm">
-        {busy ? "Saving…" : status}
-      </p>
-      <section>
-        <h2 className="text-xl font-semibold">Enroll a device</h2>
-        <form
-          className="mt-4 grid gap-4 sm:grid-cols-3"
-          onSubmit={(e) => {
-            e.preventDefault();
-            const form = e.currentTarget;
-            const data = new FormData(form);
-            void act(async () => {
-              await call(
-                "/api/developer/devices",
-                "POST",
-                Object.fromEntries(data),
-              );
-              form.reset();
-              await onChange();
-            });
-          }}
-        >
-          <label className="text-sm">
-            Device ID
-            <input
-              className="access-input"
-              name="deviceId"
-              required
-              maxLength={100}
-              autoComplete="off"
-            />
-          </label>
-          <label className="text-sm">
-            Name
-            <input
-              className="access-input"
-              name="name"
-              required
-              maxLength={80}
-            />
-          </label>
-          <label className="text-sm">
-            One-time enrollment code
-            <input
-              className="access-input"
-              name="enrollmentCode"
-              type="password"
-              autoComplete="off"
-              required
-              maxLength={100}
-            />
-          </label>
-          <button disabled={busy} className="access-button justify-self-start">
-            Enroll privately
-          </button>
-        </form>
-      </section>
-      {device?.permissions.includes("manage") && (
+      )}
+      {mode !== "sharing" && (
+        <section id="device-enrollment">
+          <h2 className="text-xl font-semibold">Enroll your device</h2>
+          <p className="mt-2 max-w-2xl text-sm text-muted">
+            Use the device ID from the serial monitor and the one-time code
+            supplied by Bair1. Your API key is created in the next step; it is
+            not the enrollment code.
+          </p>
+          <form
+            className="mt-6 grid gap-5 sm:grid-cols-2"
+            onSubmit={(e) => {
+              e.preventDefault();
+              const form = e.currentTarget;
+              const data = new FormData(form);
+              void act(async () => {
+                await call(
+                  "/api/developer/devices",
+                  "POST",
+                  Object.fromEntries(data),
+                );
+                form.reset();
+                await onChange();
+              });
+            }}
+          >
+            <label className="text-sm">
+              Device ID
+              <input
+                className="access-input"
+                name="deviceId"
+                required
+                maxLength={100}
+                autoComplete="off"
+              />
+            </label>
+            <label className="text-sm">
+              Name
+              <input
+                className="access-input"
+                name="name"
+                required
+                maxLength={80}
+              />
+            </label>
+            <label className="text-sm sm:col-span-2">
+              One-time enrollment code
+              <input
+                className="access-input"
+                name="enrollmentCode"
+                type="password"
+                autoComplete="off"
+                required
+                maxLength={100}
+                minLength={20}
+                aria-describedby="enrollment-code-help"
+              />
+            </label>
+            <p
+              id="enrollment-code-help"
+              className="text-sm text-muted sm:col-span-2"
+            >
+              No code, or an expired code? Ask Bair1 to provision this board.
+              Uploading first will return 404.
+            </p>
+            <button
+              disabled={busy}
+              className="access-button justify-self-start"
+            >
+              {busy ? "Enrolling…" : "Enroll device privately"}
+            </button>
+          </form>
+        </section>
+      )}
+      {mode !== "enroll" && device?.permissions.includes("manage") && (
         <section className="border-t border-border pt-8">
           <h2 className="text-xl font-semibold">{device.name}: visibility</h2>
           <form
@@ -246,7 +267,7 @@ export default function AccessView({
           </p>
         </section>
       )}
-      {device?.permissions.includes("share") && (
+      {mode !== "enroll" && device?.permissions.includes("share") && (
         <section className="border-t border-border pt-8">
           <h2 className="text-xl font-semibold">Read-only links</h2>
           <p className="mt-2 text-sm text-muted">
@@ -333,158 +354,169 @@ export default function AccessView({
           </ul>
         </section>
       )}
-      <section className="border-t border-border pt-8">
-        <h2 className="text-xl font-semibold">Workspaces</h2>
-        {!enabled ? (
-          <p className="mt-3 text-muted">
-            Workspace invitations and sharing are awaiting platform
-            configuration. Personal device access remains available.
-          </p>
-        ) : (
-          <>
-            <ul className="my-4 divide-y divide-border">
-              {workspaces.map((w) => (
-                <li
-                  key={w.workspaceId}
-                  className="flex flex-wrap items-center justify-between gap-3 py-3"
-                >
-                  <span>
-                    {w.name} · {w.role}
-                  </span>
-                  {w.role === "owner" && (
-                    <div className="flex gap-2">
-                      <button
-                        disabled={busy}
-                        className="access-button"
-                        onClick={() =>
-                          act(async () => {
-                            const invite = await call(
-                              "/api/workspaces",
-                              "POST",
-                              { action: "invite", workspaceId: w.workspaceId },
-                            );
-                            setSecret(
-                              JSON.stringify({
-                                workspaceId: w.workspaceId,
-                                token: invite.token,
-                              }),
-                            );
-                          })
-                        }
-                      >
-                        Create 24h invitation
-                      </button>
-                      <button
-                        disabled={busy}
-                        className="access-button"
-                        onClick={() => act(() => showMembers(w.workspaceId))}
-                      >
-                        Members
-                      </button>
-                    </div>
-                  )}
-                </li>
-              ))}
-            </ul>
-            <form
-              className="flex flex-wrap items-end gap-4"
-              onSubmit={(e) => {
-                e.preventDefault();
-                const data = new FormData(e.currentTarget);
-                void act(async () => {
-                  await call("/api/workspaces", "POST", {
-                    name: data.get("name"),
-                  });
-                  await load();
-                });
-              }}
-            >
-              <label className="text-sm">
-                New workspace name
-                <input
-                  className="access-input"
-                  name="name"
-                  maxLength={80}
-                  required
-                />
-              </label>
-              <button disabled={busy} className="access-button">
-                Create workspace
-              </button>
-            </form>
-            <form
-              className="mt-6 flex flex-wrap items-end gap-4"
-              onSubmit={(e) => {
-                e.preventDefault();
-                const data = new FormData(e.currentTarget);
-                void act(async () => {
-                  const invitation = JSON.parse(String(data.get("invitation")));
-                  await call("/api/workspaces", "POST", {
-                    ...invitation,
-                    action: "accept",
-                  });
-                  await load();
-                  await onChange();
-                });
-              }}
-            >
-              <label className="text-sm flex-1">
-                Invitation JSON
-                <input
-                  className="access-input"
-                  name="invitation"
-                  autoComplete="off"
-                  required
-                />
-              </label>
-              <button disabled={busy} className="access-button">
-                Accept invitation
-              </button>
-            </form>
-            {workspace && (
-              <div className="mt-6">
-                <h3 className="font-semibold">Workspace members</h3>
-                {members
-                  .filter((m) => !m.revokedAt)
-                  .map((m) => (
-                    <div
-                      key={m.userId}
-                      className="flex flex-wrap items-center justify-between gap-4 border-b border-border py-3"
-                    >
-                      <span className="break-all text-sm">
-                        {m.userId} · {m.role}
-                      </span>
-                      {m.role !== "owner" && (
-                        <select
-                          aria-label={`Role for ${m.userId}`}
-                          value={m.role}
+      {mode !== "enroll" && (
+        <section className="border-t border-border pt-8">
+          <h2 className="text-xl font-semibold">Workspaces</h2>
+          {enabled === null ? (
+            <p className="mt-3 text-muted" role="status">
+              Loading workspaces…
+            </p>
+          ) : !enabled ? (
+            <p className="mt-3 text-muted">
+              Workspace invitations and sharing are awaiting platform
+              configuration. Personal device access remains available.
+            </p>
+          ) : (
+            <>
+              <ul className="my-4 divide-y divide-border">
+                {workspaces.map((w) => (
+                  <li
+                    key={w.workspaceId}
+                    className="flex flex-wrap items-center justify-between gap-3 py-3"
+                  >
+                    <span>
+                      {w.name} · {w.role}
+                    </span>
+                    {w.role === "owner" && (
+                      <div className="flex gap-2">
+                        <button
                           disabled={busy}
-                          className="access-input max-w-40"
-                          onChange={(e) => {
-                            const role = e.target.value || null;
-                            void act(async () => {
-                              await call("/api/workspaces", "PATCH", {
-                                workspaceId: workspace,
-                                userId: m.userId,
-                                role,
-                              });
-                              await showMembers(workspace);
-                              await onChange();
-                            });
-                          }}
+                          className="access-button"
+                          onClick={() =>
+                            act(async () => {
+                              const invite = await call(
+                                "/api/workspaces",
+                                "POST",
+                                {
+                                  action: "invite",
+                                  workspaceId: w.workspaceId,
+                                },
+                              );
+                              setSecret(
+                                JSON.stringify({
+                                  workspaceId: w.workspaceId,
+                                  token: invite.token,
+                                }),
+                              );
+                            })
+                          }
                         >
-                          <option value="member">Member</option>
-                          <option value="admin">Admin</option>
-                          <option value="">Revoke access</option>
-                        </select>
-                      )}
-                    </div>
-                  ))}
-              </div>
-            )}
-          </>
-        )}
-      </section>
+                          Create 24h invitation
+                        </button>
+                        <button
+                          disabled={busy}
+                          className="access-button"
+                          onClick={() => act(() => showMembers(w.workspaceId))}
+                        >
+                          Members
+                        </button>
+                      </div>
+                    )}
+                  </li>
+                ))}
+              </ul>
+              <form
+                className="flex flex-wrap items-end gap-4"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  const data = new FormData(e.currentTarget);
+                  void act(async () => {
+                    await call("/api/workspaces", "POST", {
+                      name: data.get("name"),
+                    });
+                    await load();
+                  });
+                }}
+              >
+                <label className="text-sm">
+                  New workspace name
+                  <input
+                    className="access-input"
+                    name="name"
+                    maxLength={80}
+                    required
+                  />
+                </label>
+                <button disabled={busy} className="access-button">
+                  Create workspace
+                </button>
+              </form>
+              <form
+                className="mt-6 flex flex-wrap items-end gap-4"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  const data = new FormData(e.currentTarget);
+                  void act(async () => {
+                    const invitation = JSON.parse(
+                      String(data.get("invitation")),
+                    );
+                    await call("/api/workspaces", "POST", {
+                      ...invitation,
+                      action: "accept",
+                    });
+                    await load();
+                    await onChange();
+                  });
+                }}
+              >
+                <label className="text-sm flex-1">
+                  Invitation JSON
+                  <input
+                    className="access-input"
+                    name="invitation"
+                    autoComplete="off"
+                    required
+                  />
+                </label>
+                <button disabled={busy} className="access-button">
+                  Accept invitation
+                </button>
+              </form>
+              {workspace && (
+                <div className="mt-6">
+                  <h3 className="font-semibold">Workspace members</h3>
+                  {members
+                    .filter((m) => !m.revokedAt)
+                    .map((m) => (
+                      <div
+                        key={m.userId}
+                        className="flex flex-wrap items-center justify-between gap-4 border-b border-border py-3"
+                      >
+                        <span className="break-all text-sm">
+                          {m.userId} · {m.role}
+                        </span>
+                        {m.role !== "owner" && (
+                          <select
+                            aria-label={`Role for ${m.userId}`}
+                            value={m.role}
+                            disabled={busy}
+                            className="access-input max-w-40"
+                            onChange={(e) => {
+                              const role = e.target.value || null;
+                              void act(async () => {
+                                await call("/api/workspaces", "PATCH", {
+                                  workspaceId: workspace,
+                                  userId: m.userId,
+                                  role,
+                                });
+                                await showMembers(workspace);
+                                await onChange();
+                              });
+                            }}
+                          >
+                            <option value="member">Member</option>
+                            <option value="admin">Admin</option>
+                            <option value="">Revoke access</option>
+                          </select>
+                        )}
+                      </div>
+                    ))}
+                </div>
+              )}
+            </>
+          )}
+        </section>
+      )}
       {secret && (
         <div className="border-t border-border pt-6">
           <label className="text-sm font-semibold">

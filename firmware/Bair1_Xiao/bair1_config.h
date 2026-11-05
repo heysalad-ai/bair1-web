@@ -2,7 +2,10 @@
 // Fill locally; do not share this file after adding credentials.
 static const char WIFI_SSID[] = "";
 static const char WIFI_PASSWORD[] = "";
-// Create a Bair1 developer API key with write:readings on your account.
+// First enroll this board in Devices & access using its one-time enrollment code.
+// Then create a device-restricted developer key with write:readings in that same account.
+// A firmware configuration file or API key alone does not enroll the board.
+// Factory steps and pass criteria: docs/manufacturer/TESTING.md
 // Never use Auth0 tokens, Notehub secrets, or the server's system API key here.
 static const char BAIR1_API_KEY[] = "";
 // Set only after server/board approval. Production destination after deployment:
