@@ -12,7 +12,7 @@ source='''#include <ArduinoJson.h>
 #include <ctime>
 #include <cassert>
 #include "bair1_config.h"
-std::string deviceId, bootSession="native-test-boot";
+std::string deviceId, bootSession="native-test-boot", factorySessionId="";
 std::atomic<uint32_t> dropped{0};
 '''+struct+payload+ack+'''
 int main(int argc,char **argv){

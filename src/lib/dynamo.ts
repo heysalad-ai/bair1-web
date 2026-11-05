@@ -24,6 +24,9 @@ import {
 const TABLE = storageTable("bair1-readings");
 
 export interface Reading {
+  factorySessionId?: string | null;
+  bootSession?: string | null;
+  bmeValid?: boolean;
   deviceId: string;
   timestamp: string;
   capturedAt: string | null;
@@ -160,6 +163,9 @@ function parseItem(item: Record<string, AttributeValue>): Reading {
       text(item, "physicalDeviceId") ?? text(item, "deviceId") ?? "unknown",
     timestamp: text(item, "readingAt") ?? text(item, "timestamp") ?? "",
     capturedAt: text(item, "capturedAt"),
+    factorySessionId: typeof raw.factorySessionId === "string" ? raw.factorySessionId : null,
+    bootSession: typeof raw.bootSession === "string" ? raw.bootSession : null,
+    bmeValid: raw.bmeValid === true,
     receivedAt: text(item, "receivedAt"),
     clockQuality: (text(item, "clockQuality") ??
       "unknown") as Reading["clockQuality"],

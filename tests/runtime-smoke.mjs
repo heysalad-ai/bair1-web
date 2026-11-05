@@ -19,7 +19,7 @@ try{
   await delay(100);
  }
  assert.ok(ready,'Production server failed to become ready');
- const cases=[['POST','/api/chat',401],['GET','/api/voice/briefing',401],['GET','/api/environment',401],['POST','/api/graphql',401],['GET','/api/workspaces',401],['GET','/api/developer/api-keys',401],['GET','/api/devices/synthetic/export',401],['GET','/api/v1/devices/synthetic/state',401],['POST','/api/v1/devices/synthetic/commands',401],['POST','/api/admin/bootstrap',503],['GET','/api/public/insight/kitchen',405],['POST','/api/public/insight/nonexistent',404],['GET','/share/synthetic',404]];
+ const cases=[['GET','/api/factory/units',401],['POST','/api/factory/units',401],['GET','/api/factory/receipt',401],['POST','/api/admin/factory-grants',401],['POST','/api/chat',401],['GET','/api/voice/briefing',401],['GET','/api/environment',401],['POST','/api/graphql',401],['GET','/api/workspaces',401],['GET','/api/developer/api-keys',401],['GET','/api/devices/synthetic/export',401],['GET','/api/v1/devices/synthetic/state',401],['POST','/api/v1/devices/synthetic/commands',401],['POST','/api/admin/bootstrap',503],['GET','/api/public/insight/kitchen',405],['POST','/api/public/insight/nonexistent',404],['GET','/share/synthetic',404]];
  for(const [method,path,status]of cases){
   const response=await fetch(base+path,{method,signal:AbortSignal.timeout(5000),...(method==='POST'?{body:'{}',headers:{'Content-Type':'application/json'}}:{})});
   assert.equal(response.status,status,path);

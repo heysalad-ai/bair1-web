@@ -15,6 +15,10 @@ export default function Auth0ProviderWrapper({
         redirect_uri: typeof window !== "undefined" ? window.location.origin : "",
       }}
       cacheLocation="localstorage"
+      onRedirectCallback={(appState) => {
+        if (appState?.returnTo === "/firmware#installer") window.location.replace("/firmware#installer");
+        else window.history.replaceState({}, document.title, window.location.pathname);
+      }}
     >
       {children}
     </Auth0Provider>

@@ -25,6 +25,7 @@ struct Sample {
 Adafruit_BME280 bme;
 QueueHandle_t samples;
 String deviceId, bootSession;
+#include "factory_usb.h"
 std::atomic<uint32_t> dropped{0};
 bool bmeReady = false, configured = false;
 uint32_t lastRead = 0, lastBmeRetry = 0, sequence = 0;
@@ -41,7 +42,8 @@ bool startBme() {
 void makePayload(const Sample &s, JsonDocument &doc) {
   doc["deviceId"] = deviceId;
   doc["deviceName"] = DEVICE_NAME;
-  doc["firmwareVersion"] = "bair1-xiao-bme-adc-1.0.0";
+  doc["firmwareVersion"] = "bair1-xiao-bme-adc-1.1.0";
+  if (factorySessionId.length()) doc["factorySessionId"] = factorySessionId;
   doc["board"] = "Seeed XIAO ESP32-S3";
   doc["transport"] = "wifi";
   doc["bootSession"] = bootSession;
@@ -94,12 +96,13 @@ void uploadTask(void *) {
   uint32_t lastWifiAttempt = millis() - WIFI_RETRY_MS;
   uint32_t retryMs = 2000;
   bool authBlocked = false;
+  uint8_t authFailures = 0;
   for (;;) {
     if (authBlocked) { vTaskDelay(pdMS_TO_TICKS(1000)); continue; }
     if (WiFi.status() != WL_CONNECTED) {
       if (millis() - lastWifiAttempt >= WIFI_RETRY_MS) {
         lastWifiAttempt = millis();
-        WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+        WiFi.begin(runtimeSsid.c_str(), runtimePassword.c_str());
       }
       vTaskDelay(pdMS_TO_TICKS(250)); continue;
     }
@@ -122,21 +125,24 @@ void uploadTask(void *) {
     http.setFollowRedirects(HTTPC_DISABLE_FOLLOW_REDIRECTS);
     int status = -1;
     bool ok = false;
-    if (http.begin(tls, BAIR1_URL)) {
+    if (http.begin(tls, runtimeUrl)) {
       http.addHeader("Content-Type", "application/json");
-      http.addHeader("Authorization", String("Bearer ") + BAIR1_API_KEY);
+      http.addHeader("Authorization", String("Bearer ") + runtimeKey);
       status = http.POST(payload);
       if (status > 0) ok = accepted(status, http.getString());
       http.end();
     }
     if (ok) {
+      authFailures = 0;
       xQueueReceive(samples, &s, 0);
       retryMs = 2000;
       Serial.printf("Upload acknowledged; queued=%u\n", unsigned(uxQueueMessagesWaiting(samples)));
       vTaskDelay(pdMS_TO_TICKS(100));
     } else {
       Serial.printf("Upload not acknowledged; HTTP=%d; keeping sample\n", status);
-      if (status == 401 || status == 403) {
+      // Newly issued key indexes may take a moment to replicate. Retry within a
+      // bounded initial window before treating persistent rejection as final.
+      if ((status == 401 || status == 403) && ++authFailures >= 5) {
         authBlocked = true;
         Serial.println("Check API key permissions; restart after correcting configuration.");
       }
@@ -164,8 +170,9 @@ void setup() {
     unsigned(esp_random()), unsigned(esp_random()), unsigned(esp_random()));
   deviceId = id;
   bootSession = boot;
+  loadFactoryConfig();
   samples = xQueueCreate(QUEUE_LENGTH, sizeof(Sample));
-  configured = samples && strlen(WIFI_SSID) && strlen(BAIR1_API_KEY) && strlen(BAIR1_URL);
+  configured = samples && runtimeSsid.length() && runtimeKey.length() && runtimeUrl.length();
   if (configured) {
     WiFi.persistent(false);
     WiFi.mode(WIFI_STA);
@@ -174,10 +181,11 @@ void setup() {
       configured = false;
       Serial.println("Upload task allocation failed; serial measurements only.");
     }
-  } else Serial.println("Fill bair1_config.h to enable upload; serial measurements only.");
+  } else Serial.println("Use the Bair1 factory USB tool to configure Wi-Fi and uploads; serial measurements only.");
 }
 
 void loop() {
+  pollFactoryUsb();
   uint32_t now = millis();
   if (!bmeReady && now - lastBmeRetry >= 30000) {
     lastBmeRetry = now;

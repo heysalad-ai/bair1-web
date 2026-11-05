@@ -1,0 +1,2 @@
+# Preserve Windows batch line endings without treating CR as trailing whitespace.
+public/firmware/factory-bme280/Flash-Windows.cmd text eol=crlf whitespace=cr-at-eol

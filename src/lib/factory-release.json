@@ -1,0 +1,32 @@
+{
+  "version": "bair1-xiao-bme-adc-1.1.0",
+  "chip": "ESP32-S3",
+  "fqbn": "esp32:esp32:XIAO_ESP32S3",
+  "arduinoEsp32": "3.3.11",
+  "files": [
+    {
+      "path": "/firmware/factory-bme280/bootloader.bin",
+      "address": 0,
+      "size": 19968,
+      "sha256": "73bd425e380c709f6abd83aa987cb51c042a9aa8de44a37a9edb22d53bca08dd"
+    },
+    {
+      "path": "/firmware/factory-bme280/partitions.bin",
+      "address": 32768,
+      "size": 3072,
+      "sha256": "1d9cca96de0fe07ad7fc0648b9878ddecd9ce565e38b589ad20fea698ed4c80c"
+    },
+    {
+      "path": "/firmware/factory-bme280/boot_app0.bin",
+      "address": 57344,
+      "size": 8192,
+      "sha256": "f94c5d786a7a8fab06ac5d10e33bf37711a6697636dc037559ea19cc410a17f0"
+    },
+    {
+      "path": "/firmware/factory-bme280/application.bin",
+      "address": 65536,
+      "size": 1050512,
+      "sha256": "e2e27868c67ea31c811fcf948a1aa65c984d8f653a0f6a64a1de669c750b7dcb"
+    }
+  ]
+}

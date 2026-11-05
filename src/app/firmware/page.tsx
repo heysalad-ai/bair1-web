@@ -105,7 +105,7 @@ export default function FirmwarePage() {
 
       <section id="installer" className="py-16 sm:py-20">
         <div className="mx-auto max-w-6xl px-6">
-          <FirmwareInstaller targets={firmwareTargets} />
+          <FirmwareInstaller />
         </div>
       </section>
 
