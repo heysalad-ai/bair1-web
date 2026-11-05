@@ -1,6 +1,7 @@
 import {test,before,after} from 'node:test';
 import assert from 'node:assert/strict';
 import {randomUUID,randomBytes} from 'node:crypto';
+import {NextRequest} from 'next/server.js';
 import {readFileSync} from 'node:fs';
 import {DynamoDBClient,CreateTableCommand,DeleteTableCommand,GetItemCommand,UpdateItemCommand} from '@aws-sdk/client-dynamodb';
 import {createLoader} from './helpers/load-ts.mjs';
@@ -48,7 +49,7 @@ test('keys are hash-only, upload-only, device-bound; retry revokes only previous
 test('fresh receipt is session-bound; stale, cross-unit and invalid readings cannot pass',async()=>{
  const a=user(),board=id();await store.createFactoryGrant(a.userId);const u=await store.enrollFactoryUnit(a,board);const c=await store.configureFactoryUnit(a,board),unit=await store.factoryUnit(a,board);
  const raw={factorySessionId:c.sessionId,bootSession:randomBytes(16).toString('hex').toUpperCase(),bmeValid:true,adcD3Raw:1200,adcD2Raw:1500,temperature:21,humidity:50,pressure:1000,firmwareVersion:'bair1-xiao-bme-adc-1.1.0'};
- await db.storeReading({deviceId:board,ownershipVersion:u.ownershipVersion,tenantId:a.orgId,aqi:null,rawPayload:raw,capturedAt:new Date().toISOString(),eventId:randomUUID()});
+ await db.storeReading({deviceId:board,ownershipVersion:u.ownershipVersion,tenantId:a.orgId,aqi:null,firmwareVersion:raw.firmwareVersion,rawPayload:raw,capturedAt:new Date().toISOString(),eventId:randomUUID()});
  const reading=await db.getLatestReading(board);const result=store.factoryReceipt(unit,reading);assert.ok(result?.sensorsValid);assert.equal(result.bootSession,raw.bootSession);
  assert.equal(store.factoryReceipt(unit,{...reading,factorySessionId:randomUUID()}),null);assert.equal(store.factoryReceipt(unit,{...reading,receivedAt:'2000-01-01T00:00:00Z'}),null);assert.equal(store.factoryReceipt(unit,{...reading,deviceId:id()}),null);assert.equal(store.factoryReceipt(unit,{...reading,humidity:null}).sensorsValid,false);assert.equal(store.factoryReceipt(unit,{...reading,bmeValid:false}).sensorsValid,false);
 });
@@ -67,4 +68,37 @@ test('simultaneous configuration requests do not leave two fresh upload keys',as
  const result=await Promise.allSettled([store.configureFactoryUnit(a,board),store.configureFactoryUnit(a,board)]);
  const issued=result.filter(r=>r.status==='fulfilled');assert.ok(issued.length>=1);
  const active=await Promise.all(issued.map(r=>keys.validateApiKey(r.value.key,['write:readings'])));assert.equal(active.filter(Boolean).length,1);
+});
+
+test('SPS30 profile is immutable, consumes one slot, rejects another profile and another owner',async()=>{
+ const a=user(),b=user(),board=id();await store.createFactoryGrant(a.userId);await store.createFactoryGrant(b.userId);
+ const unit=await store.enrollFactoryUnit(a,board,'sps30-i2c');assert.equal(unit.profile,'sps30-i2c');
+ await assert.rejects(store.enrollFactoryUnit(a,board));await assert.rejects(store.configureFactoryUnit(a,board));
+ await assert.rejects(store.enrollFactoryUnit(b,board,'sps30-i2c'));await assert.rejects(store.configureFactoryUnit(b,board,'sps30-i2c'));
+ assert.equal((await store.getFactoryGrant(a.userId)).remaining,24);
+ await assert.rejects(store.enrollFactoryUnit(a,id(),'uart'));assert.equal((await store.getFactoryGrant(a.userId)).remaining,24);
+});
+test('actual stored SPS30 receipt preserves zero and rejects stale, warming, bad-status and missing frames',async()=>{
+ const a=user(),board=id();await store.createFactoryGrant(a.userId);const u=await store.enrollFactoryUnit(a,board,'sps30-i2c');
+ const c=await store.configureFactoryUnit(a,board,'sps30-i2c'),unit=await store.factoryUnit(a,board);
+ const raw={factorySessionId:c.sessionId,bootSession:randomBytes(16).toString('hex').toUpperCase(),sps30Valid:true,sensorModel:'SPS30',sensorProfile:'sps30-i2c',sensorAgeMs:30,sensorUptimeMs:35000,sensorStatus:0,pm1:0,pm25:0,pm4:0,pm10:0,firmwareVersion:'bair1-xiao-sps30-1.0.0'};
+ await db.storeReading({deviceId:board,ownershipVersion:u.ownershipVersion,tenantId:a.orgId,aqi:null,firmwareVersion:raw.firmwareVersion,rawPayload:raw,capturedAt:new Date().toISOString(),eventId:randomUUID()});
+ const reading=await db.getLatestReading(board);assert.equal(store.factoryReceipt(unit,reading).sensorsValid,true);
+ for(const patch of [{pm25:null},{pm1:NaN},{pm10:1001},{pm4:-1},{sps30Valid:false},{sensorAgeMs:3000},{sensorUptimeMs:29999},{sensorStatus:1},{sensorModel:'BME280'},{sensorProfile:'bme280-adc'},{firmwareVersion:'bair1-xiao-bme-adc-1.1.0'},{capturedAt:'2000-01-01T00:00:00Z'},{receivedAt:'2000-01-01T00:00:00Z'}]){
+  assert.notEqual(store.factoryReceipt(unit,{...reading,...patch})?.sensorsValid,true);
+ }
+ const newer=await store.configureFactoryUnit(a,board,'sps30-i2c');assert.notEqual(c.sessionId,newer.sessionId);assert.equal(store.factoryReceipt(await store.factoryUnit(a,board),reading),null);
+});
+
+test('compiled SPS30 payload uploads through the actual POST handler after factory enrollment',async()=>{
+ const payload=JSON.parse(readFileSync('/tmp/bair1-sps30-firmware-payload.json','utf8'));
+ const a=user(),board=payload.deviceId;await store.createFactoryGrant(a.userId);
+ await store.enrollFactoryUnit(a,board,'sps30-i2c');const c=await store.configureFactoryUnit(a,board,'sps30-i2c');
+ payload.factorySessionId=c.sessionId;payload.capturedAt=Math.floor(Date.now()/1000);
+ const route=load('src/app/api/readings/route.ts');
+ const request=()=>new NextRequest('https://synthetic.invalid/api/readings',{method:'POST',headers:{Authorization:'Bearer '+c.key,'Content-Type':'application/json'},body:JSON.stringify(payload)});
+ const first=await route.POST(request());assert.equal(first.status,200);assert.equal((await first.json()).stored,true);
+ const duplicate=await route.POST(request());assert.equal(duplicate.status,200);assert.equal((await duplicate.json()).outcome,'duplicate');
+ const receipt=store.factoryReceipt(await store.factoryUnit(a,board),await db.getLatestReading(board));assert.equal(receipt.sensorsValid,true);assert.equal(receipt.pm25,0);
+ payload.deviceId=id();assert.equal((await route.POST(request())).status,404);
 });

@@ -17,6 +17,6 @@ export async function POST(request: Request) {
   try {
     const body = await readJsonObject(request, 2048);
     if (typeof body.deviceId !== "string" || !["enroll", "configure"].includes(String(body.action))) throw new FactoryError("Device identity and action required", 400);
-    return Response.json(body.action === "enroll" ? await enrollFactoryUnit(auth.user, body.deviceId) : await configureFactoryUnit(auth.user, body.deviceId), { headers });
+    return Response.json(body.action === "enroll" ? await enrollFactoryUnit(auth.user, body.deviceId, body.profile) : await configureFactoryUnit(auth.user, body.deviceId, body.profile), { headers });
   } catch (error) { return failure(error); }
 }
