@@ -18,19 +18,20 @@ export interface FirmwareTarget {
 export const firmwareTargets: FirmwareTarget[] = [
   {
     slug: "xiao-esp32s3-sps30",
-    name: "Bair1 SPS30 Home",
+    name: "SPS30 RevC factory diagnostic",
     board: "Seeed XIAO ESP32S3",
     platformioEnv: "seeed_xiao_esp32s3",
-    version: "0.4.0-sps30-wifi",
+    version: "bair1-xiao-sps30-1.0.0",
     status: "beta",
-    updated: "2026-06-21",
-    sourcePath: "sps30_xiao_probe",
+    updated: "2026-11-05",
+    sourcePath: "firmware/Bair1_SPS30",
+    firmwarePath: "/firmware/factory-sps30/Bair1-factory-USB-package.zip",
     sensors: ["Sensirion SPS30"],
     transports: ["WiFi", "HTTPS"],
     notes: [
-      "Auto-scans XIAO I2C pins and uploads PM1, PM2.5, PM4, and PM10.",
-      "Verified SPS30 wiring: SDA D4/GPIO5, SCL D3/GPIO4, 5V, GND, SEL to GND.",
-      "Requires local secrets.h for WiFi and Bair1 API key before building.",
+      "Factory diagnostic: SPS30 PM1, PM2.5, PM4 and PM10 plus Wi-Fi upload. Physical reference-unit acceptance pending.",
+      "RevC 1.0.3 reference: SDA D4/GPIO5, SCL D5/GPIO6, regulated 5V sensor supply, GND, SEL to GND. Check wiring before flashing.",
+      "Select SPS30 in Factory USB setup. No compile-time credentials. Separate from the older D3 probe and UART builds.",
     ],
   },
   {

@@ -7,6 +7,8 @@ import { getDevice } from "./devices";
 import type { User } from "./users";
 import type { Reading } from "./dynamo";
 
+import { FACTORY_PROFILES, factoryProfile, type FactoryProfile } from "./factory-profiles";
+
 const access = storageTable("bair1-access"), devices = storageTable("bair1-devices"), keys = storageTable("bair1-api-keys");
 const seconds = () => Math.floor(Date.now() / 1000);
 const grantKey = (userId: string) => ({ scope: { S: `factory:${userId}` }, entry: { S: "grant" } });
@@ -15,9 +17,9 @@ export class FactoryError extends Error {
   constructor(message: string, public status = 409) { super(message); }
 }
 export type FactoryGrant = { batchId: string; expiresAt: number; remaining: number; maximum: number };
-export type FactoryUnit = { deviceId: string; ownershipVersion: string; createdAt: string; sessionId: string | null; keyId: string | null; configuredAt: string | null };
+export type FactoryUnit = { deviceId: string; profile: FactoryProfile; ownershipVersion: string; createdAt: string; sessionId: string | null; keyId: string | null; configuredAt: string | null };
 function unit(row: Record<string, AttributeValue>): FactoryUnit {
-  return { deviceId: row.deviceId.S!, ownershipVersion: row.ownershipVersion.S!, createdAt: row.createdAt.S!, sessionId: row.sessionId?.S ?? null, keyId: row.keyId?.S ?? null, configuredAt: row.configuredAt?.S ?? null };
+  return { profile: factoryProfile(row.profile?.S), deviceId: row.deviceId.S!, ownershipVersion: row.ownershipVersion.S!, createdAt: row.createdAt.S!, sessionId: row.sessionId?.S ?? null, keyId: row.keyId?.S ?? null, configuredAt: row.configuredAt?.S ?? null };
 }
 export function validateFactoryDeviceId(value: unknown): string {
   if (typeof value !== "string" || !/^XIAO-[0-9A-F]{12}$/.test(value)) throw new FactoryError("Connect a XIAO ESP32-S3 board to read its hardware identity.", 400);
@@ -48,30 +50,32 @@ function grantCheck(user: User, grant: FactoryGrant) {
 function deviceCheck(user: User, value: FactoryUnit) {
   return { TableName: devices, Key: { deviceId: { S: value.deviceId } }, ConditionExpression: "ownerId = :owner AND orgId = :org AND ownershipVersion = :version", ExpressionAttributeValues: { ":owner": { S: user.userId }, ":org": { S: user.orgId }, ":version": { S: value.ownershipVersion } } };
 }
-export async function enrollFactoryUnit(user: User, deviceId: string): Promise<FactoryUnit> {
+export async function enrollFactoryUnit(user: User, deviceId: string, selected?: unknown): Promise<FactoryUnit> {
   validateFactoryDeviceId(deviceId);
   const grant = await getFactoryGrant(user.userId);
   const previous = await ownedUnit(user, grant, deviceId);
-  if (previous) return previous;
-  const value: FactoryUnit = { deviceId, ownershipVersion: randomUUID(), createdAt: new Date().toISOString(), sessionId: null, keyId: null, configuredAt: null };
+  const profile = factoryProfile(selected);
+  if (previous) { if (previous.profile !== profile) throw new FactoryError("This unit is enrolled for another sensor configuration. Select its original configuration or contact Peter."); return previous; }
+  const value: FactoryUnit = { deviceId, profile, ownershipVersion: randomUUID(), createdAt: new Date().toISOString(), sessionId: null, keyId: null, configuredAt: null };
   try {
     await dynamoClient.send(new TransactWriteItemsCommand({ TransactItems: [
       { Update: { ...grantCheck(user, grant), UpdateExpression: "SET remaining = remaining - :one", ConditionExpression: `${grantCheck(user, grant).ConditionExpression} AND remaining > :zero`, ExpressionAttributeValues: { ...grantCheck(user, grant).ExpressionAttributeValues, ":one": { N: "1" }, ":zero": { N: "0" } } } },
-      { Update: { TableName: devices, Key: { deviceId: { S: deviceId } }, UpdateExpression: "SET ownerId = :owner, orgId = :org, ownershipVersion = :version, #n = :name, visibility = :private, #status = :status, createdAt = :created, factoryBatch = :batch REMOVE enrollmentHash, enrollmentExpiresAt", ConditionExpression: "attribute_not_exists(deviceId) OR ((attribute_not_exists(ownerId) OR ownerId = :empty) AND factoryBatch = :batch)", ExpressionAttributeNames: { "#n": "name", "#status": "status" }, ExpressionAttributeValues: { ":owner": { S: user.userId }, ":org": { S: user.orgId }, ":version": { S: value.ownershipVersion }, ":name": { S: "Factory BME280 + dual ADC" }, ":private": { S: "private" }, ":status": { S: "provisioning" }, ":created": { S: value.createdAt }, ":batch": { S: grant.batchId }, ":empty": { S: "" } } } },
-      { Put: { TableName: access, Item: { ...unitKey(grant.batchId, deviceId), deviceId: { S: deviceId }, ownershipVersion: { S: value.ownershipVersion }, createdAt: { S: value.createdAt } }, ConditionExpression: "attribute_not_exists(#s)", ExpressionAttributeNames: { "#s": "scope" } } },
+      { Update: { TableName: devices, Key: { deviceId: { S: deviceId } }, UpdateExpression: "SET ownerId = :owner, orgId = :org, ownershipVersion = :version, #n = :name, visibility = :private, #status = :status, createdAt = :created, factoryBatch = :batch REMOVE enrollmentHash, enrollmentExpiresAt", ConditionExpression: "attribute_not_exists(deviceId) OR ((attribute_not_exists(ownerId) OR ownerId = :empty) AND factoryBatch = :batch)", ExpressionAttributeNames: { "#n": "name", "#status": "status" }, ExpressionAttributeValues: { ":owner": { S: user.userId }, ":org": { S: user.orgId }, ":version": { S: value.ownershipVersion }, ":name": { S: `Factory ${FACTORY_PROFILES[profile].label}` }, ":private": { S: "private" }, ":status": { S: "provisioning" }, ":created": { S: value.createdAt }, ":batch": { S: grant.batchId }, ":empty": { S: "" } } } },
+      { Put: { TableName: access, Item: { ...unitKey(grant.batchId, deviceId), deviceId: { S: deviceId }, profile: { S: profile }, ownershipVersion: { S: value.ownershipVersion }, createdAt: { S: value.createdAt } }, ConditionExpression: "attribute_not_exists(#s)", ExpressionAttributeNames: { "#s": "scope" } } },
     ] }));
   } catch (error) {
     if (!(error instanceof TransactionCanceledException)) throw error;
     const retry = await ownedUnit(user, grant, deviceId);
-    if (retry) return retry;
+    if (retry) { if (retry.profile !== profile) throw new FactoryError("This unit was enrolled for another sensor configuration."); return retry; }
     throw new FactoryError("Unit not enrolled. It may already be registered, or the factory quota/access changed. Contact Peter.");
   }
   return value;
 }
-export async function configureFactoryUnit(user: User, deviceId: string) {
+export async function configureFactoryUnit(user: User, deviceId: string, selected?: unknown) {
   validateFactoryDeviceId(deviceId);
   const grant = await getFactoryGrant(user.userId), previous = await ownedUnit(user, grant, deviceId);
   if (!previous) throw new FactoryError("Enroll this unit before configuring it.", 404);
+  if (previous.profile !== factoryProfile(selected)) throw new FactoryError("Select the sensor configuration this unit was enrolled with.");
   const prepared = prepareApiKey({ name: "Factory USB upload", userId: user.userId, orgId: user.orgId, scopes: ["write:readings"], deviceId });
   const sessionId = randomUUID(), configuredAt = new Date().toISOString();
   const expected = previous.keyId ? "keyId = :old" : "attribute_not_exists(keyId)";
@@ -105,6 +109,10 @@ export async function listFactoryUnits(user: User) {
 export function factoryReceipt(value: FactoryUnit, reading: Reading | null) {
   if (!reading || reading.deviceId !== value.deviceId || !value.sessionId || !value.configuredAt || reading.factorySessionId !== value.sessionId || !reading.receivedAt || !Number.isFinite(Date.parse(reading.receivedAt)) || Date.parse(reading.receivedAt) < Date.parse(value.configuredAt)) return null;
   const within = (n: number | null, min: number, max: number) => typeof n === "number" && Number.isFinite(n) && n >= min && n <= max;
-  const sensorsValid = reading.bmeValid === true && within(reading.temperature, -40, 85) && within(reading.humidity, 0, 100) && within(reading.pressure, 300, 1100) && within(reading.adcD3Raw, 0, 4095) && within(reading.adcD2Raw, 0, 4095);
-  return { receivedAt: reading.receivedAt, capturedAt: reading.capturedAt, bootSession: reading.bootSession ?? null, sensorsValid, temperature: reading.temperature, humidity: reading.humidity, pressure: reading.pressure, adcD3Raw: reading.adcD3Raw, adcD2Raw: reading.adcD2Raw, firmwareVersion: reading.firmwareVersion, sample: reading.sample };
+  const profile = value.profile ?? "bme280-adc";
+  const sps30 = profile === "sps30-i2c";
+  const recent = !sps30 || (Date.now() - Date.parse(reading.receivedAt) <= 120000 && Date.now() >= Date.parse(reading.receivedAt) && !!reading.capturedAt && Math.abs(Date.parse(reading.receivedAt) - Date.parse(reading.capturedAt)) <= 120000);
+  const versionMatches = recent && reading.firmwareVersion === FACTORY_PROFILES[profile].version;
+  const sensorsValid = versionMatches && (sps30 ? reading.sps30Valid === true && reading.sensorModel === "SPS30" && reading.sensorProfile === profile && reading.sensorAgeMs !== null && reading.sensorAgeMs !== undefined && within(reading.sensorAgeMs, 0, 2500) && within(reading.sensorUptimeMs ?? null, 30000, 4294967295) && reading.sensorStatus === 0 && [reading.pm1, reading.pm25, reading.pm4, reading.pm10].every(n => within(n, 0, 1000)) : reading.bmeValid === true && within(reading.temperature, -40, 85) && within(reading.humidity, 0, 100) && within(reading.pressure, 300, 1100) && within(reading.adcD3Raw, 0, 4095) && within(reading.adcD2Raw, 0, 4095));
+  return { profile, pm1: reading.pm1, pm25: reading.pm25, pm4: reading.pm4, pm10: reading.pm10, receivedAt: reading.receivedAt, capturedAt: reading.capturedAt, bootSession: reading.bootSession ?? null, sensorsValid, temperature: reading.temperature, humidity: reading.humidity, pressure: reading.pressure, adcD3Raw: reading.adcD3Raw, adcD2Raw: reading.adcD2Raw, firmwareVersion: reading.firmwareVersion, sample: reading.sample };
 }

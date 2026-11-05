@@ -48,7 +48,7 @@ jobs:
             # These two manifests contain public firmware digests, verified against
             # the committed binaries below. All other secret patterns still apply.
             if [ "$pattern" = '[0-9a-f]{64}' ]; then
-              PATTERN_FILES=$(echo "$FILES" | grep -vE '^(src/lib/factory-release.json|public/firmware/factory-bme280/manifest.json)$')
+              PATTERN_FILES=$(echo "$FILES" | grep -vE '^(src/lib/factory-release.json|public/firmware/factory-bme280/manifest.json|src/lib/factory-sps30-release.json|public/firmware/factory-sps30/manifest.json)$')
             fi
             MATCHES=$(echo "$PATTERN_FILES" | xargs grep -lPn "$pattern" 2>/dev/null || true)
             if [ -n "$MATCHES" ]; then

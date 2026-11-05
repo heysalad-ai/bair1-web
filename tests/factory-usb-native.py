@@ -1,7 +1,7 @@
 """Execute the actual firmware USB parser/validator with native USB/NVS boundary fakes."""
-import os,pathlib,secrets,subprocess,tempfile
+import os,pathlib,secrets,subprocess,tempfile,sys
 root=pathlib.Path(__file__).resolve().parent.parent
-header=(root/'firmware/Bair1_Xiao/factory_usb.h').read_text().replace('#pragma once','').replace('#include <Preferences.h>','').replace('String','std::string').replace('key.startsWith("bair1_")','(key.rfind("bair1_",0)==0)')
+header=(root/('firmware/Bair1_SPS30/factory_usb.h' if '--sps30' in sys.argv else 'firmware/Bair1_Xiao/factory_usb.h')).read_text().replace('#pragma once','').replace('#include <Preferences.h>','').replace('String','std::string').replace('key.startsWith("bair1_")','(key.rfind("bair1_",0)==0)')
 source=r'''
 #include <ArduinoJson.h>
 #include <string>

@@ -43,3 +43,16 @@ with patch.dict(sys.modules,{'serial':types.SimpleNamespace(Serial=windows_seria
  helper.main()
 assert captured.getvalue().strip()==opened.board
 print('Windows serial-open regression passed through the actual helper CLI entry point.')
+
+# A new SPS30 settings file must never configure a BME280 board.
+port=Port(); before=len(port.writes)
+try:helper.configure(port,{**settings,'deviceId':port.board,'profile':'sps30-i2c'});raise AssertionError('Cross-profile settings accepted')
+except helper.FactorySetupError:pass
+assert len(port.writes)==before+1
+original_version=helper.VERSION;helper.VERSION=helper.VERSIONS['sps30-i2c']
+port=Port();helper.configure(port,{**settings,'deviceId':port.board,'profile':'sps30-i2c'})
+assert port.writes[-1]['bair1']=='configure'
+try:helper.configure(port,{**settings,'deviceId':port.board});raise AssertionError('Legacy BME settings accepted by SPS30')
+except helper.FactorySetupError:pass
+helper.VERSION=original_version
+print('Manual sensor-profile binding passed in both directions, including SPS30 configuration.')

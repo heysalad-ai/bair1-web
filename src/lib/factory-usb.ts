@@ -1,5 +1,7 @@
 import { configurationCommand, deviceIdFromMac, parseIdentity, type BoardIdentity } from "./factory-usb-protocol";
-import release from "./factory-release.json";
+import bmeRelease from "./factory-release.json";
+import spsRelease from "./factory-sps30-release.json";
+import type { FactoryProfile } from "./factory-profiles";
 // All serial content is private. Only structured, whitelisted replies reach the UI.
 export class FactoryUsb {
   private reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
@@ -75,14 +77,15 @@ export class FactoryUsb {
     await this.port.close().catch(() => {});
   }
 }
-export async function installFactoryFirmware(port: SerialPort, progress: (message: string) => void) {
+export async function installFactoryFirmware(port: SerialPort, progress: (message: string) => void, profile: FactoryProfile = "bme280-adc") {
+  const release = profile === "sps30-i2c" ? spsRelease : bmeRelease;
   const [{ ESPLoader, Transport }, { createMD5 }] = await Promise.all([import("esptool-js"), import("hash-wasm")]);
   const transport = new Transport(port, false);
   const loader = new ESPLoader({ transport, baudrate: 115200, debugLogging: false, terminal: { clean() {}, writeLine() {}, write() {} } });
   try {
     progress("Connecting to the ESP32-S3 bootloader…");
     await loader.main();
-    if (loader.chip?.CHIP_NAME !== "ESP32-S3") throw new Error("Wrong chip. This build is only for the XIAO ESP32-S3 BME280 + dual ADC board.");
+    if (loader.chip?.CHIP_NAME !== "ESP32-S3") throw new Error("Wrong chip. This build is only for the XIAO ESP32-S3 board.");
     const deviceId = deviceIdFromMac(await loader.chip.readMac(loader));
     const security = await loader.getSecurityInfo();
     if (security.parsedFlags.SECURE_BOOT_EN || security.parsedFlags.SECURE_DOWNLOAD_ENABLE || security.flashCryptCnt) throw new Error("This board has protected flash. Use its approved secure installation process.");

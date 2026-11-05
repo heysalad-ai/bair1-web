@@ -9,6 +9,7 @@ from pathlib import Path
 
 UPLOAD_URL = "https://app.bair1.live/api/readings"
 VERSION = "bair1-xiao-bme-adc-1.1.0"
+VERSIONS = {"bme280-adc": VERSION, "sps30-i2c": "bair1-xiao-sps30-1.0.0"}
 class FactorySetupError(ValueError):
     """Safe operator messages authored here, never raw serial/configuration content."""
 
@@ -36,14 +37,16 @@ def exchange(port, command, timeout=10):
 def identity(port):
     value = exchange(port, {"bair1": "identify"})
     if (value.get("bair1") != "identity" or value.get("protocolVersion") != 1
-            or value.get("chip") != "ESP32-S3" or value.get("firmwareVersion") != VERSION
+            or value.get("chip") != "ESP32-S3" or value.get("firmwareVersion") not in VERSIONS.values()
             or not re.fullmatch(r"XIAO-[0-9A-F]{12}", str(value.get("deviceId", "")))
             or not re.fullmatch(r"[0-9A-F]{32}", str(value.get("bootSession", "")))):
-        raise FactorySetupError("Unsupported board/firmware. Install the approved BME280 + dual ADC build.")
+        raise FactorySetupError("Unsupported board/firmware. Install the approved factory build for this sensor configuration.")
     return value
 
 def configure(port, settings):
     board = identity(port)
+    if VERSIONS.get(settings.get("profile", "bme280-adc")) != board["firmwareVersion"]:
+        raise FactorySetupError("Settings and firmware sensor configurations differ. Select the correct profile and download fresh settings.")
     fields = ("deviceId", "ssid", "password", "apiKey", "url", "factorySessionId")
     if any(not isinstance(settings.get(field), str) for field in fields):
         raise FactorySetupError("Invalid settings file. Download it again from factory setup.")

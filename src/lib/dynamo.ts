@@ -27,6 +27,11 @@ export interface Reading {
   factorySessionId?: string | null;
   bootSession?: string | null;
   bmeValid?: boolean;
+  sps30Valid?: boolean;
+  sensorProfile?: string | null;
+  sensorAgeMs?: number | null;
+  sensorUptimeMs?: number | null;
+  sensorStatus?: number | null;
   deviceId: string;
   timestamp: string;
   capturedAt: string | null;
@@ -166,6 +171,11 @@ function parseItem(item: Record<string, AttributeValue>): Reading {
     factorySessionId: typeof raw.factorySessionId === "string" ? raw.factorySessionId : null,
     bootSession: typeof raw.bootSession === "string" ? raw.bootSession : null,
     bmeValid: raw.bmeValid === true,
+    sps30Valid: raw.sps30Valid === true,
+    sensorProfile: typeof raw.sensorProfile === "string" ? raw.sensorProfile : null,
+    sensorAgeMs: rawNumber(raw, "sensorAgeMs"),
+    sensorUptimeMs: rawNumber(raw, "sensorUptimeMs"),
+    sensorStatus: rawNumber(raw, "sensorStatus"),
     receivedAt: text(item, "receivedAt"),
     clockQuality: (text(item, "clockQuality") ??
       "unknown") as Reading["clockQuality"],
