@@ -108,13 +108,13 @@ export async function listApiKeysForOrg(orgId: string): Promise<ApiKeyRecord[]> 
   return listByIndex("orgId-createdAt-index", "orgId", orgId);
 }
 
-export async function createApiKey(input: {
+export function prepareApiKey(input: {
   name: string;
   userId: string;
   orgId: string;
   scopes?: ApiKeyScope[];
   deviceId?: string;
-}): Promise<{ key: string; record: ApiKeyRecord }> {
+}) {
   const key = `bair1_${randomBytes(24).toString("base64url")}`;
   const id = `key_${randomBytes(10).toString("hex")}`;
   const prefix = key.slice(0, 12);
@@ -134,9 +134,7 @@ export async function createApiKey(input: {
     revokedAt: null,
   };
 
-  await dynamoClient.send(new PutItemCommand({
-    TableName: TABLE,
-    Item: {
+  const item = {
       id: { S: id },
       keyHash: { S: hashKey(key) },
       ...(input.deviceId ? { deviceId: { S: input.deviceId } } : {}),
@@ -146,8 +144,13 @@ export async function createApiKey(input: {
       orgId: { S: input.orgId },
       scopes: { S: JSON.stringify(scopes) },
       createdAt: { S: createdAt },
-    },
-  }));
+    };
+  return { key, record, item };
+}
+
+export async function createApiKey(input: Parameters<typeof prepareApiKey>[0]): Promise<{ key: string; record: ApiKeyRecord }> {
+  const { key, record, item } = prepareApiKey(input);
+  await dynamoClient.send(new PutItemCommand({ TableName: TABLE, Item: item }));
   return { key, record };
 }
 

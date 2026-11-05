@@ -50,3 +50,6 @@ next-env.d.ts
 .kiro/
 .playwright-cli/
 output/
+/.impeccable/review/
+/dynamodb-local-metadata.json
+__pycache__/
