@@ -9,7 +9,9 @@ test("factory setup uses the deployed upload host and leaves credentials local",
   const config = uploadConfig("synthetic-board");
   assert.ok(config.includes(UPLOAD_URL));
   assert.ok(config.includes("<paste your upload key locally>"));
-  assert.ok(!config.includes("bair1.com"));
+  const configured = config.match(/BAIR1_URL\[\] = "([^"]+)"/);
+  assert.ok(configured);
+  assert.equal(new URL(configured[1]).href, UPLOAD_URL);
 });
 test("firmware and read presets separate upload from read privileges", () => {
   assert.deepEqual(keyPresets.firmware, ["write:readings"]);
