@@ -25,6 +25,7 @@ Observed:
 - Firmware key request included write:readings and the selected device restriction. Returning from custom permissions removed a custom read permission.
 - One-time key value was masked, could be permanently hidden, and revocation required a separate confirmation action.
 - Last-upload verification distinguished a recent receipt, an old receipt, no reading and a service error. A reported temperature of zero remained visible as 0 °C. Server receipt times are labeled UTC.
+- Keyboard Enter activated the next step and focus moved into its named content region. Input boundaries were strengthened within the setup surface.
 - Sharing/workspace controls remained available separately from device connection steps.
 
 Screenshots below contain synthetic records only; no real credentials or device identifiers.

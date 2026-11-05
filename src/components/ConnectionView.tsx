@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { DeviceOption } from "@/app/dashboard/page";
 import { useAuthenticatedFetch } from "@/lib/use-authenticated-fetch";
 import { UPLOAD_URL } from "@/lib/device-setup";
@@ -22,6 +22,12 @@ export default function ConnectionView({
   onChange: () => Promise<void>;
 }) {
   const [step, setStep] = useState<"enroll" | "keys" | "verify">("enroll");
+  const panel = useRef<HTMLDivElement>(null);
+  const previousStep = useRef(step);
+  useEffect(() => {
+    if (previousStep.current !== step) panel.current?.focus();
+    previousStep.current = step;
+  }, [step]);
   return (
     <div className="connection-page">
       <header className="connection-page-heading">
@@ -49,7 +55,19 @@ export default function ConnectionView({
           </button>
         ))}
       </nav>
-      <div className="connection-content">
+      <div
+        className="connection-content"
+        ref={panel}
+        tabIndex={-1}
+        role="region"
+        aria-label={
+          step === "enroll"
+            ? "Enroll your board"
+            : step === "keys"
+              ? "Create an upload key"
+              : "Verify an upload"
+        }
+      >
         {step === "enroll" ? (
           <AccessView
             mode="enroll"
