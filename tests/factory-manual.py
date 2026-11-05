@@ -37,7 +37,9 @@ def windows_serial(*args,**kwargs):
   raise ValueError('win32 only supports exclusive access')
  assert args==('COM7',115200)
  return opened
-with patch.dict(sys.modules,{'serial':types.SimpleNamespace(Serial=windows_serial)}), patch.object(sys,'platform','win32'), patch.object(sys,'argv',['factory_usb.py','--port','COM7','--identify']), patch.object(helper.time,'sleep',lambda _:None), contextlib.redirect_stdout(io.StringIO()) as captured:
+# Scope the Windows platform simulation to the helper. Changing sys.platform
+# globally makes newer Python stdlib modules import Windows-only native APIs on Linux.
+with patch.dict(sys.modules,{'serial':types.SimpleNamespace(Serial=windows_serial)}), patch.object(helper,'sys',types.SimpleNamespace(platform='win32')), patch.object(sys,'argv',['factory_usb.py','--port','COM7','--identify']), patch.object(helper.time,'sleep',lambda _:None), contextlib.redirect_stdout(io.StringIO()) as captured:
  helper.main()
 assert captured.getvalue().strip()==opened.board
 print('Windows serial-open regression passed through the actual helper CLI entry point.')
