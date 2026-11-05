@@ -133,6 +133,19 @@ test('unknown clock is explicit, stable identity still deduplicates, legacy and 
  const rows=await db.getReadingsInRange(d,legacyTime,legacyTime);assert.equal(rows.length,1);assert.equal(rows[0].clockQuality,'unknown');assert.equal(rows[0].timestamp,legacyTime);
 });
 
+test('an unenrolled board receives actionable 404 without auto-registration or persisted data',async()=>{
+ const d=randomUUID();
+ const response=await fetch(origin+'/api/readings',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+key},body:JSON.stringify(sample(d,1))});
+ assert.equal(response.status,404);
+ const body=await response.json();
+ assert.equal(body.error,'enroll this device before uploading');
+ assert.equal(body.code,'DEVICE_ENROLLMENT_REQUIRED');
+ assert.match(body.action,/one-time enrollment code/);
+ assert.equal(JSON.stringify(body).includes(d),false);
+ assert.equal(await devices.getDevice(d),null);
+ assert.equal((await rawRows(d)).length,0);
+});
+
 test('auth, ownership, shape, size and finite-value failures do not persist readings',async()=>{
  const d=randomUUID(), payload=sample(d,1);await post(payload);
  assert.equal((await post(sample(d,2),null)).status,401);

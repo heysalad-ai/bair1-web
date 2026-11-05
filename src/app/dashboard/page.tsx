@@ -7,8 +7,7 @@ import Navigation, { type Tab, type ViewerRole } from "@/components/Navigation";
 import MapView from "@/components/MapView";
 import AIChatView from "@/components/AIChatView";
 import AdminView from "@/components/AdminView";
-import DeveloperView from "@/components/DeveloperView";
-import AccessView from "@/components/AccessView";
+import ConnectionView from "@/components/ConnectionView";
 import {
   MeasurementView,
   ReadingHistory,
@@ -46,7 +45,7 @@ export default function Dashboard() {
   } | null>(null);
   const [snapshotError, setSnapshotError] = useState("");
   const loadDevices = useCallback(async () => {
-    setState("loading");
+    setState((current) => (current === "ready" ? "ready" : "loading"));
     setError("");
     try {
       const response = await request("/api/graphql", {
@@ -241,16 +240,7 @@ export default function Dashboard() {
         {state === "ready" && (
           <>
             {tab === "developer" ? (
-              <>
-                <AccessView
-                  key={selected}
-                  device={device}
-                  onChange={loadDevices}
-                />
-                <div className="mt-12 border-t border-border pt-8">
-                  <DeveloperView />
-                </div>
-              </>
+              <ConnectionView device={device} onChange={loadDevices} />
             ) : tab === "admin" && role === "super_admin" ? (
               <AdminView />
             ) : !device ? (

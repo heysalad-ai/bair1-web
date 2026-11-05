@@ -86,7 +86,12 @@ export async function POST(req: NextRequest) {
     let existing = await getDevice(deviceId);
     if (!existing && principal.type === "developer") {
       return NextResponse.json(
-        { error: "enroll this device before uploading" },
+        {
+          error: "enroll this device before uploading",
+          code: "DEVICE_ENROLLMENT_REQUIRED",
+          action:
+            "Sign in to the account that owns the upload key and enroll this board in Devices & access using its one-time enrollment code.",
+        },
         { status: 404 },
       );
     }

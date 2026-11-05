@@ -1,331 +1,464 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
-import { useAuth0 } from "@auth0/auth0-react";
+import { FormEvent, useCallback, useEffect, useState } from "react";
 import type { ApiKeyScope } from "@/lib/api-keys";
 import type { Device } from "@/lib/devices";
+import { useAuthenticatedFetch } from "@/lib/use-authenticated-fetch";
+import { keyPresets, uploadConfig, type KeyPurpose } from "@/lib/device-setup";
 
-interface ApiKeyRecord {
+type KeyRecord = {
   id: string;
   name: string;
   prefix: string;
   scopes: ApiKeyScope[];
+  deviceId?: string;
   createdAt: string;
   lastUsedAt: string | null;
   revokedAt: string | null;
-}
-
-const SCOPES: { value: ApiKeyScope; label: string }[] = [
-  { value: "read:devices", label: "Read devices" },
+};
+const scopes: { value: ApiKeyScope; label: string }[] = [
+  { value: "read:devices", label: "List devices" },
+  { value: "read:readings", label: "Read measurements" },
+  { value: "export:readings", label: "Export measurements" },
+  { value: "write:readings", label: "Upload measurements" },
   { value: "write:devices", label: "Write devices" },
-  { value: "read:readings", label: "Read readings" },
-  { value: "write:readings", label: "Write readings" },
-  { value: "export:readings", label: "Export readings" },
 ];
-
-async function parseJson<T>(response: Response): Promise<T> {
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    const message = typeof data.error === "string" ? data.error : "Request failed";
-    throw new Error(message);
-  }
-  return data as T;
+async function json<T>(response: Response): Promise<T> {
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok)
+    throw new Error(body.error || "Request failed. Please try again.");
+  return body as T;
 }
 
-export default function DeveloperView() {
-  const { getAccessTokenSilently } = useAuth0();
-  const [keys, setKeys] = useState<ApiKeyRecord[]>([]);
+export default function DeveloperView({
+  preferredDevice = "",
+  onEnroll,
+}: {
+  preferredDevice?: string;
+  onEnroll?: () => void;
+}) {
+  const request = useAuthenticatedFetch();
+  const [keys, setKeys] = useState<KeyRecord[]>([]);
   const [devices, setDevices] = useState<Device[]>([]);
-  const [keyName, setKeyName] = useState("Local development");
-  const [selectedScopes, setSelectedScopes] = useState<ApiKeyScope[]>(
-    ["read:devices", "read:readings", "export:readings"]
+  const [purpose, setPurpose] = useState<KeyPurpose>("firmware");
+  const [selectedScopes, setScopes] = useState<ApiKeyScope[]>(
+    keyPresets.firmware,
   );
-  const [boundDevice, setBoundDevice] = useState("");
-  const [newKey, setNewKey] = useState<string | null>(null);
-  const [status, setStatus] = useState<string | null>(null);
+  const [name, setName] = useState("Factory upload");
+  const [deviceId, setDeviceId] = useState("");
+  const [newKey, setNewKey] = useState("");
+  const [reveal, setReveal] = useState(false);
+  const [status, setStatus] = useState("");
+  const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
-
-  const authHeaders = useCallback(async () => {
-    const token = await getAccessTokenSilently();
-    return {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-    };
-  }, [getAccessTokenSilently]);
-
+  const [busy, setBusy] = useState(false);
+  const [revokeId, setRevokeId] = useState("");
   const load = useCallback(async () => {
     setLoading(true);
-    setStatus(null);
+    setError("");
+    setNewKey("");
+    setReveal(false);
     try {
-      const headers = await authHeaders();
-      const [keysResponse, devicesResponse] = await Promise.all([
-        fetch("/api/developer/api-keys", { headers }),
-        fetch("/api/developer/devices", { headers }),
+      const [k, d] = await Promise.all([
+        request("/api/developer/api-keys").then(json<{ keys: KeyRecord[] }>),
+        request("/api/developer/devices").then(json<{ devices: Device[] }>),
       ]);
-      const keysData = await parseJson<{ keys: ApiKeyRecord[] }>(keysResponse);
-      const devicesData = await parseJson<{ devices: Device[] }>(devicesResponse);
-      setKeys(keysData.keys);
-      setDevices(devicesData.devices);
-    } catch (err) {
-      setStatus(err instanceof Error ? err.message : "Unable to load developer data");
+      setKeys(k.keys);
+      setDevices(d.devices);
+      setDeviceId((current) =>
+        d.devices.some((x) => x.deviceId === current)
+          ? current
+          : d.devices.some((x) => x.deviceId === preferredDevice)
+            ? preferredDevice
+            : "",
+      );
+    } catch (e) {
+      setError(
+        e instanceof Error ? e.message : "API keys could not be loaded.",
+      );
     } finally {
       setLoading(false);
     }
-  }, [authHeaders]);
-
+  }, [request, preferredDevice]);
   useEffect(() => {
-    const timer = window.setTimeout(() => {
-      void load();
-    }, 0);
-    return () => window.clearTimeout(timer);
+    const timer = setTimeout(() => void load(), 0);
+    return () => clearTimeout(timer);
   }, [load]);
-
-  const sampleKey = "bair1_your_api_key";
-  const newestDeviceId = devices[0]?.deviceId || "bair1-dev-001";
-  const cliExample = useMemo(
-    () => `export BAIR1_API_KEY=${sampleKey}\nnpx -y @heysalad/bair1 devices\nnpx -y @heysalad/bair1 readings ${newestDeviceId}`,
-    [newestDeviceId, sampleKey]
-  );
-  const mcpExample = useMemo(
-    () => `{\n  "mcpServers": {\n    "bair1": {\n      "command": "npx",\n      "args": ["-y", "@heysalad/bair1-mcp"],\n      "env": {\n        "BAIR1_API_KEY": "${sampleKey}"\n      }\n    }\n  }\n}`,
-    [sampleKey]
-  );
-  const firmwareExample = useMemo(
-    () => `curl -X POST https://bair1.com/api/readings \\\n  -H "Authorization: Bearer ${sampleKey}" \\\n  -H "Content-Type: application/json" \\\n  -d '{"deviceId":"${newestDeviceId}","pm25":7.2,"aqi":31,"transport":"wifi"}'`,
-    [newestDeviceId, sampleKey]
-  );
-
-  async function createKey(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setStatus(null);
-    setNewKey(null);
+  async function copy(value: string, success: string) {
+    setError("");
     try {
-      const headers = await authHeaders();
-      const response = await fetch("/api/developer/api-keys", {
-        method: "POST",
-        headers,
-        body: JSON.stringify({ name: keyName, scopes: selectedScopes, deviceId: boundDevice || undefined }),
-      });
-      const data = await parseJson<{ key: string; record: ApiKeyRecord }>(response);
+      await navigator.clipboard.writeText(value);
+      setStatus(success);
+    } catch {
+      setError("Clipboard unavailable. Select the text and copy it manually.");
+    }
+  }
+  async function create(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (busy) return;
+    setBusy(true);
+    setError("");
+    setStatus("");
+    setNewKey("");
+    setReveal(false);
+    try {
+      const data = await json<{ key: string; record: KeyRecord }>(
+        await request("/api/developer/api-keys", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name,
+            scopes: selectedScopes,
+            deviceId: deviceId || undefined,
+          }),
+        }),
+      );
       setKeys((current) => [data.record, ...current]);
       setNewKey(data.key);
-      setStatus("API key created. Copy it now; the full value is shown once.");
-    } catch (err) {
-      setStatus(err instanceof Error ? err.message : "Unable to create API key");
-    }
-  }
-
-  async function revokeKey(id: string) {
-    setStatus(null);
-    try {
-      const headers = await authHeaders();
-      const response = await fetch(`/api/developer/api-keys?id=${encodeURIComponent(id)}`, {
-        method: "DELETE",
-        headers,
-      });
-      await parseJson<{ ok: boolean }>(response);
-      setKeys((current) =>
-        current.map((key) =>
-          key.id === id ? { ...key, revokedAt: new Date().toISOString() } : key
-        )
+      setStatus(
+        "Key created. Copy it now, then save it in your local firmware configuration.",
       );
-      setStatus("API key revoked.");
-    } catch (err) {
-      setStatus(err instanceof Error ? err.message : "Unable to revoke API key");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Key creation failed.");
+    } finally {
+      setBusy(false);
     }
   }
-
-  function toggleScope(scope: ApiKeyScope) {
-    setSelectedScopes((current) =>
-      current.includes(scope)
-        ? current.filter((item) => item !== scope)
-        : [...current, scope]
-    );
+  async function revoke(id: string) {
+    if (busy) return;
+    setBusy(true);
+    setError("");
+    try {
+      await json(
+        await request(`/api/developer/api-keys?id=${encodeURIComponent(id)}`, {
+          method: "DELETE",
+        }),
+      );
+      setKeys((current) =>
+        current.map((k) =>
+          k.id === id ? { ...k, revokedAt: new Date().toISOString() } : k,
+        ),
+      );
+      setNewKey("");
+      setRevokeId("");
+      setStatus(
+        "Key revoked. Update any device using it before the next upload.",
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Key revocation failed.");
+    } finally {
+      setBusy(false);
+    }
   }
-
+  const blocked =
+    loading ||
+    busy ||
+    !name.trim() ||
+    selectedScopes.length === 0 ||
+    (purpose === "firmware" && !deviceId);
   return (
-    <section className="tab-content-enter px-4 pb-28 lg:px-0 lg:pb-8">
-      <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+    <section className="connection-stack" aria-label="API keys">
+      <div className="connection-heading">
         <div>
-
-          <h1 className="text-xl font-semibold leading-tight text-ink lg:text-2xl">
-            API keys, devices, and agent access
-          </h1>
+          <h2>Create an API key</h2>
+          <p>
+            Use a dedicated upload key for each test board. Keys belong to this
+            signed-in account.
+          </p>
         </div>
         <button
-          type="button"
+          className="access-button"
           onClick={() => void load()}
-          className="self-start rounded-lg border border-border bg-surface/60 px-3 py-2 text-xs font-medium text-muted transition-colors hover:text-ink"
+          disabled={loading || busy}
         >
-          Refresh
+          {loading ? "Loading…" : "Refresh keys"}
         </button>
       </div>
-
-      {status && (
-        <div className="mb-4 rounded-lg border border-border bg-surface/70 px-4 py-3 text-sm text-muted">
-          {status}
+      {error && (
+        <p role="alert" className="connection-error">
+          {error}
+        </p>
+      )}
+      <p role="status" className="connection-feedback">
+        {status}
+      </p>
+      {!loading && devices.length === 0 && (
+        <div className="connection-notice">
+          <strong>Enroll your board first.</strong>
+          <p>
+            A key alone cannot register a device. You need a one-time enrollment
+            code from Bair1.
+          </p>
+          {onEnroll && (
+            <button className="access-button mt-3" onClick={onEnroll}>
+              Go to enrollment
+            </button>
+          )}
         </div>
       )}
-
-      <div className="grid gap-4 lg:grid-cols-[1.05fr_0.95fr]">
-        <div className="space-y-4">
-          <form onSubmit={createKey} className="rounded-lg border border-border bg-surface/70 p-4 lg:p-5">
-            <div className="mb-4 flex items-start justify-between gap-3">
-              <div>
-                <h2 className="text-base font-semibold leading-tight text-ink">Create API key</h2>
-                <p className="text-xs text-muted">Use keys for the CLI, MCP server, firmware, and external apps.</p>
-              </div>
-              <button
-                type="submit"
-                disabled={!keyName.trim() || selectedScopes.length === 0}
-                className="rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                Create
-              </button>
-            </div>
-            <label className="block text-xs font-medium uppercase tracking-wider text-muted">
-              Key name
-              <input
-                value={keyName}
-                onChange={(event) => setKeyName(event.target.value)}
-                className="mt-2 w-full rounded-lg border border-border bg-bg px-3 py-2 text-sm normal-case tracking-normal text-ink outline-none focus:border-primary/70"
-              />
-            </label>
-            <label className="mt-4 block text-sm">Limit key to device<select value={boundDevice} onChange={e => setBoundDevice(e.target.value)} className="access-input"><option value="">All devices you own</option>{devices.map(d => <option key={d.deviceId} value={d.deviceId}>{d.name}</option>)}</select></label>
-            <div className="mt-4 grid gap-2 sm:grid-cols-2">
-              {SCOPES.map((scope) => (
-                <label
-                  key={scope.value}
-                  className="flex items-center gap-2 rounded-lg border border-border bg-bg px-3 py-2 text-xs text-ink"
-                >
+      <form onSubmit={create} className="connection-form" aria-busy={busy}>
+        <fieldset disabled={loading || busy}>
+          <legend>What will this key do?</legend>
+          <div className="connection-presets">
+            {(
+              [
+                [
+                  "firmware",
+                  "Firmware upload",
+                  "Upload measurements from one board.",
+                ],
+                [
+                  "read",
+                  "Read & export",
+                  "Read your device data from a script.",
+                ],
+                ["custom", "Custom access", "Choose individual permissions."],
+              ] as const
+            ).map(([value, label, hint]) => (
+              <label key={value}>
+                <input
+                  type="radio"
+                  name="key-purpose"
+                  value={value}
+                  checked={purpose === value}
+                  onChange={() => {
+                    setPurpose(value);
+                    if (value !== "custom") setScopes([...keyPresets[value]]);
+                  }}
+                />
+                <span>
+                  <strong>{label}</strong>
+                  <small>{hint}</small>
+                </span>
+              </label>
+            ))}
+          </div>
+        </fieldset>
+        <div className="connection-fields">
+          <label>
+            Key name
+            <input
+              className="access-input"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              maxLength={80}
+              required
+              disabled={busy}
+            />
+          </label>
+          <label>
+            {purpose === "firmware" ? "Enrolled test board" : "Device access"}
+            <select
+              className="access-input"
+              value={deviceId}
+              onChange={(e) => setDeviceId(e.target.value)}
+              disabled={loading || busy}
+              required={purpose === "firmware"}
+            >
+              <option value="">
+                {purpose === "firmware"
+                  ? "Select an enrolled device"
+                  : "All devices you own"}
+              </option>
+              {devices.map((d) => (
+                <option key={d.deviceId} value={d.deviceId}>
+                  {d.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+        {purpose === "custom" ? (
+          <fieldset disabled={busy}>
+            <legend>Permissions</legend>
+            <div className="connection-scope-list">
+              {scopes.map((s) => (
+                <label key={s.value}>
                   <input
                     type="checkbox"
-                    checked={selectedScopes.includes(scope.value)}
-                    onChange={() => toggleScope(scope.value)}
-                    className="h-4 w-4 accent-primary"
+                    checked={selectedScopes.includes(s.value)}
+                    onChange={() =>
+                      setScopes((current) =>
+                        current.includes(s.value)
+                          ? current.filter((x) => x !== s.value)
+                          : [...current, s.value],
+                      )
+                    }
                   />
-                  {scope.label}
+                  {s.label}
                 </label>
               ))}
             </div>
-          </form>
-
-          {newKey && (
-            <div className="rounded-lg border border-primary/40 bg-primary/5 p-4">
-              <div className="mb-2 flex items-center justify-between gap-3">
-                <div>
-                  <h2 className="text-sm font-semibold text-ink">New API key</h2>
-                  <p className="text-xs text-muted">Copy now. The full key will not be shown again.</p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => navigator.clipboard.writeText(newKey)}
-                  className="rounded-lg border border-primary/40 px-3 py-2 text-xs font-semibold text-primary"
-                >
-                  Copy
-                </button>
-              </div>
-              <code className="block overflow-x-auto rounded-lg bg-[#0B0C0A] p-3 font-mono text-xs text-white">
-                {newKey}
-              </code>
-            </div>
-          )}
-
-          <div className="rounded-lg border border-border bg-surface/70 p-4 lg:p-5">
-            <h2 className="mb-3 text-base font-semibold leading-tight text-ink">API keys</h2>
-            <div className="space-y-2">
-              {keys.map((key) => (
-                <div key={key.id} className="rounded-lg border border-border bg-bg px-3 py-3">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <div className="text-sm font-medium text-ink">{key.name}</div>
-                      <div className="font-mono text-xs text-muted">{key.prefix}...</div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => void revokeKey(key.id)}
-                      disabled={Boolean(key.revokedAt)}
-                      className="rounded-lg border border-border px-2 py-1 text-xs text-muted transition-colors hover:text-ink disabled:opacity-50"
-                    >
-                      {key.revokedAt ? "Revoked" : "Revoke"}
-                    </button>
-                  </div>
-                  <div className="mt-2 flex flex-wrap gap-1">
-                    {key.scopes.map((scope) => (
-                      <span key={scope} className="rounded bg-surface px-2 py-1 font-mono text-[10px] text-muted">
-                        {scope}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              ))}
-              {!loading && keys.length === 0 && (
-                <p className="rounded-lg border border-border bg-bg px-3 py-6 text-center text-sm text-muted">
-                  No API keys yet.
-                </p>
-              )}
-            </div>
-          </div>
-        </div>
-
-        <div className="space-y-4">
-
-
-          <div className="rounded-lg border border-border bg-surface/70 p-4 lg:p-5">
-            <h2 className="mb-3 text-base font-semibold leading-tight text-ink">Provisioned devices</h2>
-            <div className="space-y-2">
-              {devices.map((device) => (
-                <div key={device.deviceId} className="rounded-lg border border-border bg-bg px-3 py-3">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <div className="text-sm font-medium text-ink">{device.name}</div>
-                      <div className="font-mono text-xs text-muted">{device.deviceId}</div>
-                    </div>
-                    <span className="rounded bg-surface px-2 py-1 text-[10px] font-medium uppercase tracking-wider text-muted">
-                      {device.status}
-                    </span>
-                  </div>
-                  {device.location && <div className="mt-1 text-xs text-muted">{device.location}</div>}
-                </div>
-              ))}
-              {!loading && devices.length === 0 && (
-                <p className="rounded-lg border border-border bg-bg px-3 py-6 text-center text-sm text-muted">
-                  No developer devices yet.
-                </p>
-              )}
-            </div>
-          </div>
-
-          <div className="rounded-lg border border-border bg-surface/70 p-4 lg:p-5">
-            <h2 className="mb-3 text-base font-semibold leading-tight text-ink">Quick setup</h2>
-            <div className="space-y-3">
-              <CodeBlock title="CLI" value={cliExample} />
-              <CodeBlock title="Claude, Codex, Cursor MCP" value={mcpExample} />
-              <CodeBlock title="Firmware ingestion" value={firmwareExample} />
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function CodeBlock({ title, value }: { title: string; value: string }) {
-  return (
-    <div>
-      <div className="mb-1 flex items-center justify-between gap-2">
-        <div className="text-xs font-medium uppercase tracking-wider text-muted">{title}</div>
-        <button
-          type="button"
-          onClick={() => navigator.clipboard.writeText(value)}
-          className="rounded border border-border px-2 py-1 text-[10px] font-semibold text-muted transition-colors hover:text-ink"
-        >
-          Copy
+          </fieldset>
+        ) : (
+          <p className="text-sm text-muted">
+            {purpose === "firmware"
+              ? "Permission: write:readings only. This key can upload to the selected board and cannot read other devices."
+              : "Permissions: list devices, read measurements and export measurements. This key cannot upload."}
+          </p>
+        )}
+        <button className="connection-primary" disabled={blocked}>
+          {busy
+            ? "Creating key…"
+            : purpose === "firmware"
+              ? "Create upload key"
+              : "Create API key"}
         </button>
-      </div>
-      <pre className="overflow-x-auto rounded-lg bg-[#0B0C0A] p-3 text-xs text-white">
-        <code>{value}</code>
-      </pre>
-    </div>
+      </form>
+      {newKey && (
+        <section className="connection-secret" aria-label="New API key">
+          <h3>Save your key now</h3>
+          <p>
+            This is the only time the full value is available. Keep it out of
+            screenshots, source control and shared logs.
+          </p>
+          <label>
+            New API key
+            <input
+              className="access-input font-mono"
+              type={reveal ? "text" : "password"}
+              readOnly
+              value={newKey}
+              autoComplete="off"
+              spellCheck={false}
+            />
+          </label>
+          <div className="connection-actions">
+            <button
+              className="connection-primary"
+              onClick={() => void copy(newKey, "API key copied.")}
+            >
+              Copy API key
+            </button>
+            <button
+              className="access-button"
+              onClick={() => setReveal(!reveal)}
+            >
+              {reveal ? "Mask key" : "Reveal key"}
+            </button>
+            <button
+              className="access-button"
+              onClick={() => {
+                setNewKey("");
+                setReveal(false);
+                setStatus("Key hidden. It cannot be shown again.");
+              }}
+            >
+              Hide key permanently
+            </button>
+          </div>
+        </section>
+      )}
+      <details className="connection-details">
+        <summary>Firmware configuration</summary>
+        <p className="mt-3 text-sm text-muted">
+          Keep Wi-Fi settings local. Paste the key you just created into{" "}
+          <code>bair1_config.h</code>. Keep the device&apos;s generated ID
+          unchanged.
+        </p>
+        <pre className="connection-code">
+          <code>{uploadConfig(deviceId)}</code>
+        </pre>
+        <button
+          className="access-button"
+          onClick={() =>
+            void copy(
+              uploadConfig(deviceId),
+              "Configuration template copied. Add the key locally.",
+            )
+          }
+        >
+          Copy configuration template
+        </button>
+      </details>
+      <details className="connection-details">
+        <summary>CLI &amp; agent setup</summary>
+        <p className="mt-3 text-sm text-muted">
+          Use a separate Read &amp; export key for CLI or MCP access. An
+          upload-only key cannot read measurements.
+        </p>
+        <a
+          className="mt-3 inline-block underline underline-offset-4"
+          href="https://bair1.live/developers"
+        >
+          Open CLI, REST and MCP documentation
+        </a>
+      </details>
+      <section className="connection-key-list">
+        <h3>Your API keys</h3>
+        {loading ? (
+          <p role="status">Loading keys and enrolled devices…</p>
+        ) : keys.length === 0 ? (
+          <p className="text-muted">
+            No keys created yet. Enroll a board, then create its upload key
+            above.
+          </p>
+        ) : (
+          <ul>
+            {keys.map((k) => (
+              <li key={k.id}>
+                <div className="connection-key-row">
+                  <div>
+                    <strong>{k.name}</strong>
+                    <p>
+                      <code>{k.prefix}…</code> ·{" "}
+                      {k.revokedAt ? "Revoked" : "Active"}
+                    </p>
+                    <p className="text-sm text-muted">
+                      {k.lastUsedAt
+                        ? `Last used ${new Date(k.lastUsedAt).toLocaleString("en-GB")}`
+                        : "Not used yet"}{" "}
+                      ·{" "}
+                      {k.deviceId
+                        ? devices.find((d) => d.deviceId === k.deviceId)
+                            ?.name || "Device restricted"
+                        : "All owned devices"}
+                    </p>
+                  </div>
+                  {!k.revokedAt && (
+                    <button
+                      className="access-button"
+                      disabled={busy}
+                      onClick={() => setRevokeId(k.id)}
+                    >
+                      Revoke key
+                    </button>
+                  )}
+                </div>
+                <div className="connection-permissions">
+                  {k.scopes.map((s) => (
+                    <code key={s}>{s}</code>
+                  ))}
+                </div>
+                {revokeId === k.id && (
+                  <div className="connection-notice">
+                    <p>
+                      Revoke {k.name}? Uploads using it will be rejected until
+                      you replace the key.
+                    </p>
+                    <div className="connection-actions">
+                      <button
+                        className="access-button"
+                        disabled={busy}
+                        onClick={() => void revoke(k.id)}
+                      >
+                        Confirm revocation
+                      </button>
+                      <button
+                        className="access-button"
+                        disabled={busy}
+                        onClick={() => setRevokeId("")}
+                      >
+                        Keep key
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+    </section>
   );
 }
