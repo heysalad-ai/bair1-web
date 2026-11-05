@@ -30,3 +30,4 @@ npm run test:access
 npm run test:ingestion
 
 npm run test:restore
+npm run test:factory

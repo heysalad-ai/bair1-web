@@ -44,7 +44,13 @@ jobs:
             ':!.github/workflows/*')
 
           for pattern in "${PATTERNS[@]}"; do
-            MATCHES=$(echo "$FILES" | xargs grep -lPn "$pattern" 2>/dev/null || true)
+            PATTERN_FILES="$FILES"
+            # These two manifests contain public firmware digests, verified against
+            # the committed binaries below. All other secret patterns still apply.
+            if [ "$pattern" = '[0-9a-f]{64}' ]; then
+              PATTERN_FILES=$(echo "$FILES" | grep -vE '^(src/lib/factory-release.json|public/firmware/factory-bme280/manifest.json)$')
+            fi
+            MATCHES=$(echo "$PATTERN_FILES" | xargs grep -lPn "$pattern" 2>/dev/null || true)
             if [ -n "$MATCHES" ]; then
               echo "::error::Potential secret found matching pattern: $pattern"
               echo "$MATCHES" | while read -r file; do
@@ -85,6 +91,9 @@ jobs:
 
       - name: Measurement regression tests
         run: npm test
+
+      - name: Public factory firmware package integrity
+        run: python3 scripts/verify-factory-package.py
 
       - name: Type check
         run: npx tsc --noEmit
