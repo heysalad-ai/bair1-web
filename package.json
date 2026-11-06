@@ -5,7 +5,7 @@
   "private": true,
   "scripts": {
     "test": "node --test tests/measurement-labels.mjs tests/storage-config.mjs tests/customer-isolation.mjs tests/public-reading.mjs tests/measurement-contract.mjs tests/request-limits.mjs tests/api-key-revocation.mjs tests/notehub-provenance.mjs tests/auth-identity.mjs tests/safe-markdown.mjs tests/device-setup.mjs tests/factory-usb.mjs",
-    "test:factory": "python3 tests/sps30-firmware-native.py && node --test tests/factory-provisioning.integration.mjs && python3 tests/factory-usb-native.py && python3 tests/factory-usb-native.py --sps30 && python3 tests/factory-manual.py && python3 scripts/verify-factory-package.py",
+    "test:factory": "node --test tests/factory-session.integration.mjs && python3 tests/sps30-firmware-native.py && node --test tests/factory-provisioning.integration.mjs && python3 tests/factory-usb-native.py && python3 tests/factory-usb-native.py --sps30 && python3 tests/factory-manual.py && python3 scripts/verify-factory-package.py",
     "dev": "next dev",
     "build": "next build",
     "start": "next start",

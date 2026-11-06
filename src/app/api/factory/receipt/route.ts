@@ -1,10 +1,10 @@
-import { requireAuth } from "@/lib/auth";
+import { requireFactoryAuth } from "@/lib/factory-auth";
 import { withDeviceRead } from "@/lib/device-access";
 import { getLatestReading } from "@/lib/dynamo";
 import { factoryUnit, factoryReceipt, FactoryError } from "@/lib/factory-provisioning";
 export const dynamic = "force-dynamic";
 export async function GET(request: Request) {
-  const auth = await requireAuth(request); if (auth instanceof Response) return auth;
+  const auth = await requireFactoryAuth(request); if (auth instanceof Response) return auth;
   const headers = { "Cache-Control": "private, no-store" };
   try {
     const deviceId = new URL(request.url).searchParams.get("deviceId") ?? "";
