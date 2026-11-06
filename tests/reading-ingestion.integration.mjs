@@ -155,7 +155,7 @@ test('auth, ownership, shape, size and finite-value failures do not persist read
  for(const value of [null,[],42,{...payload,deviceId:''},{...payload,eventId:{}},{...payload,adcD3Raw:'Infinity'}])assert.equal((await post(value)).status,400);
  assert.equal((await post({...payload,padding:'x'.repeat(17000)})).status,413);
  const malformed=await fetch(origin+'/api/readings',{method:'POST',headers:{Authorization:'Bearer '+key},body:'{'});assert.equal(malformed.status,400);
- const infinity=await fetch(origin+'/api/readings',{method:'POST',headers:{Authorization:'Bearer '+key},body:JSON.stringify(payload).replace('21.5','1e400')});assert.equal(infinity.status,400);
+ const infinity=await fetch(origin+'/api/readings',{method:'POST',headers:{Authorization:'Bearer '+key},body:JSON.stringify(payload).replace('"temperature":21.5','"temperature":1e400')});assert.equal(infinity.status,400);
  assert.equal((await rawRows(d)).length,1);
 });
 
