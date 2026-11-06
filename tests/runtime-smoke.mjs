@@ -19,12 +19,12 @@ try{
   await delay(100);
  }
  assert.ok(ready,'Production server failed to become ready');
- const cases=[['GET','/api/factory/units',401],['POST','/api/factory/units',401],['GET','/api/factory/receipt',401],['POST','/api/admin/factory-grants',401],['POST','/api/chat',401],['GET','/api/voice/briefing',401],['GET','/api/environment',401],['POST','/api/graphql',401],['GET','/api/workspaces',401],['GET','/api/developer/api-keys',401],['GET','/api/devices/synthetic/export',401],['GET','/api/v1/devices/synthetic/state',401],['POST','/api/v1/devices/synthetic/commands',401],['POST','/api/admin/bootstrap',503],['GET','/api/public/insight/kitchen',405],['POST','/api/public/insight/nonexistent',404],['GET','/share/synthetic',404]];
+ const cases=[['GET','/api/factory/session',200],['POST','/api/factory/session',403],['DELETE','/api/factory/session',403],['GET','/factory',200],['GET','/api/factory/units',401],['POST','/api/factory/units',401],['GET','/api/factory/receipt',401],['POST','/api/admin/factory-grants',401],['POST','/api/chat',401],['GET','/api/voice/briefing',401],['GET','/api/environment',401],['POST','/api/graphql',401],['GET','/api/workspaces',401],['GET','/api/developer/api-keys',401],['GET','/api/devices/synthetic/export',401],['GET','/api/v1/devices/synthetic/state',401],['POST','/api/v1/devices/synthetic/commands',401],['POST','/api/admin/bootstrap',503],['GET','/api/public/insight/kitchen',405],['POST','/api/public/insight/nonexistent',404],['GET','/share/synthetic',404]];
  for(const [method,path,status]of cases){
   const response=await fetch(base+path,{method,signal:AbortSignal.timeout(5000),...(method==='POST'?{body:'{}',headers:{'Content-Type':'application/json'}}:{})});
   assert.equal(response.status,status,path);
   if(path.startsWith('/share/')){assert.equal(response.headers.get('referrer-policy'),'no-referrer');assert.match(response.headers.get('x-robots-tag'),/noindex/);}
-  await response.body?.cancel();
+  if(path==='/api/factory/session' && method==='GET'){assert.equal((await response.json()).authenticated,false);assert.match(response.headers.get('cache-control'),/no-store/);}else await response.body?.cancel();
  }
  console.log(`${cases.length} production-build HTTP authorization, configuration and sharing-header checks passed`);
 }finally{
