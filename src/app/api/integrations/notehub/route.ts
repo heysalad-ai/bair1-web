@@ -124,7 +124,7 @@ export async function POST(req: NextRequest) {
           tenantId: existing?.orgId ?? process.env.NOTEHUB_ORG_ID ?? "default",
           ownershipVersion: existing?.ownershipVersion ?? "legacy",
           capturedAt: normalized.captureKnown ? normalized.capturedAt : null,
-          capturedAtSource: "gateway",
+          capturedAtSource: normalized.capturedAtSource,
           eventId: normalized.eventId,
           aqi: normalized.aqi,
           gasRaw: null,

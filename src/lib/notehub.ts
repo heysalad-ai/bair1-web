@@ -25,6 +25,7 @@ export type NormalizedNotehubEvent = {
   sourceFile: string | null;
   capturedAt: string;
   captureKnown: boolean;
+  capturedAtSource: "device" | "gateway";
   eventId?: string;
   receivedAt: string;
   temperature: number | null;
@@ -78,6 +79,38 @@ function timestamp(value: number | string | undefined): string | null {
     : null;
 }
 
+/** Host IDs describe the sample origin; they never select the cloud owner/device. */
+function sensorSource(body: Record<string, unknown>) {
+  const { deviceId, bootSession, sequence, uptimeMs, eventId } = body;
+  if (
+    typeof deviceId !== "string" || !/^XIAO-[A-F0-9]{12}$/.test(deviceId) ||
+    typeof bootSession !== "string" || !/^[A-F0-9]{32}$/.test(bootSession) ||
+    typeof sequence !== "number" || !Number.isSafeInteger(sequence) || sequence < 0 ||
+    typeof uptimeMs !== "number" || !Number.isSafeInteger(uptimeMs) || uptimeMs < 0 ||
+    eventId !== `${deviceId}:${bootSession}:${sequence}`
+  ) return null;
+  return { deviceId, bootSession, sequence, uptimeMs, eventId };
+}
+
+function sps30Measurements(body: Record<string, unknown>) {
+  const value = body.sps30;
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const source = value as Record<string, unknown>;
+  if (source.valid !== true || source.numberConcentrationUnits !== "#/cm3") return null;
+  const result: Record<string, unknown> = { valid: true };
+  for (const name of ["pm1", "pm25", "pm4", "pm10", "nc05", "nc1", "nc25", "nc4", "nc10", "typicalParticleSize"]) {
+    const reading = numeric(source, name);
+    if (reading == null || reading < 0) return null;
+    result[name] = reading;
+  }
+  for (const bins of [["pm1", "pm25", "pm4", "pm10"], ["nc05", "nc1", "nc25", "nc4", "nc10"]]) {
+    for (let i = 1; i < bins.length; ++i) {
+      if (Number(result[bins[i-1]]) > Number(result[bins[i]]) + 0.02) return null;
+    }
+  }
+  return { ...result, numberConcentrationUnits: "#/cm3", massConcentrationUnits: "µg/m3", typicalParticleSizeUnits: "µm" };
+}
+
 function safeEqual(actual: string, expected: string) {
   const actualBuffer = Buffer.from(actual);
   const expectedBuffer = Buffer.from(expected);
@@ -124,7 +157,12 @@ export function normalizeNotehubEvent(
   const lat = numeric(body, "lat", "latitude") ?? event.best_lat ?? null;
   const lng =
     numeric(body, "lng", "lon", "longitude") ?? event.best_lon ?? null;
-  const capture = timestamp(event.when);
+  const sourceSample = sensorSource(body);
+  const sourceCapture = sourceSample && (typeof body.capturedAt === "string" || typeof body.capturedAt === "number")
+    ? timestamp(body.capturedAt) : null;
+  const capture = sourceCapture ?? timestamp(event.when);
+  const capturedAtSource = sourceCapture ? "device" as const : "gateway" as const;
+  const sps30 = sps30Measurements(body);
   const receivedAt = new Date().toISOString();
   const capturedAt = capture ?? timestamp(event.received) ?? receivedAt;
   const captureKnown = capture != null;
@@ -157,6 +195,8 @@ export function normalizeNotehubEvent(
 
   const sanitizedPayload: Record<string, unknown> = {
     capturedAt: capture,
+    ...(sourceSample ? { sourceSample } : {}),
+    ...(sps30 ? { sps30 } : {}),
     temperature,
     humidity: numeric(body, "humidity", "rh"),
     pressure,
@@ -187,6 +227,7 @@ export function normalizeNotehubEvent(
     sourceFile,
     capturedAt,
     captureKnown,
+    capturedAtSource,
     eventId: event.event,
     receivedAt,
     temperature,
