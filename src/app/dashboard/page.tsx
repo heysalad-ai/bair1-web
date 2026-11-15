@@ -1,6 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useState } from "react";
+import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
+import DeviceFleet from "@/components/DeviceFleet";
+import { dashboardHref } from "@/lib/device-overview";
 import { useAuth0 } from "@auth0/auth0-react";
 import Logo from "@/components/Logo";
 import Navigation, { type Tab, type ViewerRole } from "@/components/Navigation";
@@ -27,15 +31,54 @@ export type DeviceOption = {
   lng: number | null;
 };
 export default function Dashboard() {
+  return (
+    <Suspense
+      fallback={
+        <main className="m-auto p-8" role="status">
+          Loading devices…
+        </main>
+      }
+    >
+      <AccountDashboard />
+    </Suspense>
+  );
+}
+function AccountDashboard() {
+  const { user } = useAuth0();
+  return <DashboardContent key={user?.sub ?? "signed-out"} />;
+}
+function DashboardContent() {
   const { isLoading, isAuthenticated, loginWithRedirect, logout, user } =
     useAuth0();
   const request = useAuthenticatedFetch();
-  const [tab, setTab] = useState<Tab>("home");
+  const router = useRouter();
+  const params = useSearchParams();
+  const requestedDevice = params.get("device") ?? "";
+  const requestedView = params.get("view");
+  const requestedTab: Tab = [
+    "map",
+    "analytics",
+    "ai",
+    "developer",
+    "admin",
+  ].includes(requestedView ?? "")
+    ? (requestedView as Tab)
+    : "home";
+  const [fleetSearch, setFleetSearch] = useState("");
+  function setTab(next: Tab) {
+    router.push(
+      dashboardHref(next === "home" ? undefined : requestedDevice, next),
+    );
+  }
   const [devices, setDevices] = useState<DeviceOption[]>([]);
-  const [selected, setSelected] = useState("");
+  const selected = devices.some((device) => device.deviceId === requestedDevice)
+    ? requestedDevice
+    : "";
   const [workspaces, setWorkspaces] = useState<Record<string, string>>({});
   const [snapshotDenied, setSnapshotDenied] = useState(false);
   const [role, setRole] = useState<ViewerRole>("user");
+  const tab =
+    requestedTab === "admin" && role !== "super_admin" ? "home" : requestedTab;
   const [state, setState] = useState<"loading" | "ready" | "error">("loading");
   const [error, setError] = useState("");
   const [snapshot, setSnapshot] = useState<{
@@ -84,15 +127,9 @@ export default function Dashboard() {
       const list = result.data.registeredDevices as DeviceOption[];
       setDevices(list);
       setRole(result.data.viewer.role);
-      setSelected((current) =>
-        list.some((d) => d.deviceId === current)
-          ? current
-          : (list[0]?.deviceId ?? ""),
-      );
       setState("ready");
     } catch (e) {
       setDevices([]);
-      setSelected("");
       setState("error");
       setError(e instanceof Error ? e.message : "Devices unavailable");
     }
@@ -145,6 +182,7 @@ export default function Dashboard() {
             telemetry: result.data.notecardTelemetry,
           });
           setSnapshotError("");
+          setSnapshotDenied(false);
         }
       } catch (e) {
         if (active) {
@@ -184,7 +222,16 @@ export default function Dashboard() {
         <p className="my-5 text-muted">
           Sign in to view your measurements and manage access.
         </p>
-        <button className="access-button" onClick={() => loginWithRedirect()}>
+        <button
+          className="access-button"
+          onClick={() =>
+            loginWithRedirect({
+              appState: {
+                returnTo: `${window.location.pathname}${window.location.search}`,
+              },
+            })
+          }
+        >
           Sign in
         </button>
       </main>
@@ -193,27 +240,17 @@ export default function Dashboard() {
     <main className="min-h-screen flex-1 lg:pl-64">
       <header className="border-b border-border px-5 py-4 lg:px-10">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4">
-          <label className="min-w-0 text-xs text-muted">
-            Selected device
-            <select
-              aria-label="Selected device"
-              disabled={!devices.length}
-              value={selected}
-              onChange={(e) => {
-                setSelected(e.target.value);
-                setSnapshot(null);
-                setSnapshotError("");
-              }}
-              className="access-input max-w-[70vw] text-sm"
-            >
-              {!devices.length && <option value="">No devices</option>}
-              {devices.map((d) => (
-                <option key={d.deviceId} value={d.deviceId}>
-                  {d.name}
-                </option>
-              ))}
-            </select>
-          </label>
+          <nav className="fleet-breadcrumb" aria-label="Device navigation">
+            <Link href="/dashboard" aria-current={!device ? "page" : undefined}>
+              All devices
+            </Link>
+            {device && (
+              <>
+                <span aria-hidden="true">/</span>
+                <span className="fleet-current">{device.name}</span>
+              </>
+            )}
+          </nav>
           <div className="text-sm">
             <span>{user?.name}</span>
             <button
@@ -243,7 +280,7 @@ export default function Dashboard() {
               <ConnectionView device={device} onChange={loadDevices} />
             ) : tab === "admin" && role === "super_admin" ? (
               <AdminView />
-            ) : !device ? (
+            ) : !devices.length ? (
               <section>
                 <h1 className="text-3xl font-semibold">
                   Connect your first device
@@ -260,10 +297,27 @@ export default function Dashboard() {
                   Enroll a device
                 </button>
               </section>
+            ) : !device ? (
+              <>
+                {requestedDevice && (
+                  <p className="mb-6 text-sm" role="status">
+                    That device is unavailable or your access changed. Choose a
+                    device below.
+                  </p>
+                )}
+                <DeviceFleet
+                  devices={devices}
+                  workspaces={workspaces}
+                  search={fleetSearch}
+                  onSearch={setFleetSearch}
+                  purpose={tab}
+                />
+              </>
             ) : (
               <>
                 <div className="mb-8">
                   <h1 className="text-3xl font-semibold">{device.name}</h1>
+                  <p className="fleet-detail-id">{device.deviceId}</p>
                   <p className="mt-2 break-words text-sm text-muted">
                     {device.visibility === "workspace"
                       ? "Workspace access"
@@ -273,7 +327,7 @@ export default function Dashboard() {
                     ·{" "}
                     {device.isOwner
                       ? "You own this device"
-                      : "Shared workspace device"}{" "}
+                      : "You can view this device"}{" "}
                     · Workspace:{" "}
                     {workspaces[device.orgId] ??
                       (device.isOwner && !device.orgId.startsWith("workspace:")
@@ -281,6 +335,29 @@ export default function Dashboard() {
                         : "Name unavailable")}
                   </p>
                 </div>
+                <nav className="fleet-detail-tabs" aria-label="Device views">
+                  <Link
+                    href={dashboardHref(selected)}
+                    aria-current={tab === "home" ? "page" : undefined}
+                  >
+                    Measurements
+                  </Link>
+                  <Link
+                    href={dashboardHref(selected, "analytics")}
+                    aria-current={tab === "analytics" ? "page" : undefined}
+                  >
+                    History & export
+                  </Link>
+                  <Link
+                    href={dashboardHref(selected, "map")}
+                    aria-current={tab === "map" ? "page" : undefined}
+                  >
+                    Map
+                  </Link>
+                  <Link href={dashboardHref(selected, "developer")}>
+                    Device & access
+                  </Link>
+                </nav>
                 {tab === "home" &&
                   (snapshotError ? (
                     <div role="alert">
@@ -299,6 +376,7 @@ export default function Dashboard() {
                     </div>
                   ) : current ? (
                     <MeasurementView
+                      focused
                       reading={current.reading}
                       telemetry={current.telemetry}
                     />
