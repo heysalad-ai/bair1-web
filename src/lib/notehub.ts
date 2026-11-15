@@ -27,6 +27,7 @@ export type NormalizedNotehubEvent = {
   captureKnown: boolean;
   capturedAtSource: "device" | "gateway";
   eventId?: string;
+  identityPayload?: Record<string, unknown>;
   receivedAt: string;
   temperature: number | null;
   humidity: number | null;
@@ -221,6 +222,17 @@ export function normalizeNotehubEvent(
     transport,
   };
 
+  // A retransmitted host note can receive a new Notehub UUID and location.
+  // Only a validated source tuple AND stable device capture time opt into this.
+  // Device ownership remains scoped to the authenticated Notecard identity.
+  const stableSource = sourceSample && sourceCapture;
+  const identityPayload = stableSource ? { ...sanitizedPayload } : undefined;
+  if (identityPayload) {
+    for (const key of ["lat", "lng", "locationAccuracy", "locationSource", "transport"]) {
+      delete identityPayload[key];
+    }
+  }
+
   return {
     publicDeviceId: pseudonymousNotecardId(event.device, options.idSalt),
     product: event.product ?? null,
@@ -228,7 +240,8 @@ export function normalizeNotehubEvent(
     capturedAt,
     captureKnown,
     capturedAtSource,
-    eventId: event.event,
+    eventId: stableSource ? sourceSample.eventId : event.event,
+    identityPayload,
     receivedAt,
     temperature,
     humidity: numeric(body, "humidity", "rh"),

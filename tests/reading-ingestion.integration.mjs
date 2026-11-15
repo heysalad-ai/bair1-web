@@ -217,3 +217,19 @@ test('Notehub environmental events preserve unknown capture time and retry by st
   const telemetry=await db.getNotecardTelemetry(first.deviceId);assert.ok(!telemetry.temperatureAt);assert.equal(telemetry.measurementAt,null);
  }finally{delete process.env.NOTEHUB_ROUTE_SECRET;delete process.env.NOTEHUB_DEVICE_ID_SALT;}
 });
+test('host samples deduplicate across distinct Notehub events after a lost acknowledgement',async()=>{
+ process.env.NOTEHUB_ROUTE_SECRET=randomUUID();process.env.NOTEHUB_DEVICE_ID_SALT=randomUUID();
+ try {
+  const deviceId='XIAO-'+randomUUID().replaceAll('-','').slice(0,12).toUpperCase(),bootSession=randomUUID().replaceAll('-','').toUpperCase();
+  const body={deviceId,bootSession,sequence:1,uptimeMs:120000,eventId:`${deviceId}:${bootSession}:1`,capturedAt:Math.floor(Date.now()/1000)-120,pm25:12};
+  const payload={event:randomUUID(),device:randomUUID(),when:body.capturedAt+30,file:'air.qo',body};
+  const send=async(p)=>{const r=await fetch(origin+'/api/integrations/notehub',{method:'POST',headers:{Authorization:'Bearer '+process.env.NOTEHUB_ROUTE_SECRET,'Content-Type':'application/json'},body:JSON.stringify(p)});assert.equal(r.status,200);return r.json();};
+  discardReply=true;await assert.rejects(send(payload));
+  const retry=await send({...payload,event:randomUUID(),when:payload.when+10,best_lat:1,best_lon:2,transport:'cell'});
+  assert.equal(retry.readingOutcome,'duplicate');assert.equal((await rawRows(retry.deviceId)).length,1);
+  const changed=await send({...payload,event:randomUUID(),body:{...body,pm25:99}});
+  assert.equal(changed.readingOutcome,'conflict');assert.equal((await rawRows(retry.deviceId)).length,1);
+  const otherCard=await send({...payload,device:randomUUID()});
+  assert.notEqual(otherCard.deviceId,retry.deviceId);assert.equal(otherCard.readingOutcome,'stored');
+ }finally{delete process.env.NOTEHUB_ROUTE_SECRET;delete process.env.NOTEHUB_DEVICE_ID_SALT;}
+});
