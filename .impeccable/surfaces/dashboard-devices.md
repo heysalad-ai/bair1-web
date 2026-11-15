@@ -19,3 +19,7 @@ BOUNDARIES: Preserve authorization and measurement-versus-receipt semantics. Mis
 Acceptance: no device dropdown; all accessible metadata searchable; 24-unit pagination; real capture-age labels; individual measurements/history links and browser back; refresh/error/empty/long-name states; keyboard and 390/1440px layouts; current unit access remains enforced by existing GraphQL resolvers.
 
 Research: Carbon resource tables support search and progressive detail; ThingsBoard entities overview combines latest telemetry with per-device drill-down. Adapt to PRODUCT.md's consumer audience with a roomy list, rather than making a dense administrative table the default.
+
+## Integrated device monitoring
+
+The confirmed drill-down now puts the latest measurements, an automatically loaded time graph, a numeric window summary, and the recorded location on the primary device overview. Default to the latest 200 stored readings so inactive units remain inspectable; offer explicit rolling 24-hour, 7-day and 14-day windows. Label truncated pages and keep full pagination/CSV in History & export. Summaries describe loaded measurements only and never imply time-weighted averages, regulatory assessments or factory acceptance. Maps use reported or registered coordinates only and explicitly distinguish a stored position from a live GPS fix. Missing coordinates produce a clear empty state rather than a default city.

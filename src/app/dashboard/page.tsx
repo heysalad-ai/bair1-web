@@ -4,6 +4,8 @@ import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import DeviceFleet from "@/components/DeviceFleet";
+import DeviceTrends from "@/components/DeviceTrends";
+import DeviceLocation from "@/components/DeviceLocation";
 import { dashboardHref } from "@/lib/device-overview";
 import { useAuth0 } from "@auth0/auth0-react";
 import Logo from "@/components/Logo";
@@ -350,7 +352,7 @@ function DashboardContent() {
                     href={dashboardHref(selected)}
                     aria-current={tab === "home" ? "page" : undefined}
                   >
-                    Measurements
+                    Device overview
                   </Link>
                   <Link
                     href={dashboardHref(selected, "analytics")}
@@ -385,11 +387,19 @@ function DashboardContent() {
                       </button>
                     </div>
                   ) : current ? (
-                    <MeasurementView
-                      focused
-                      reading={current.reading}
-                      telemetry={current.telemetry}
-                    />
+                    <>
+                      <MeasurementView
+                        focused
+                        reading={current.reading}
+                        telemetry={current.telemetry}
+                      />
+                      <DeviceTrends key={selected} deviceId={selected} />
+                      <DeviceLocation
+                        lat={device.lat}
+                        lng={device.lng}
+                        reading={current.reading}
+                      />
+                    </>
                   ) : (
                     <p role="status">Loading measurements…</p>
                   ))}

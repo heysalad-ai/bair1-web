@@ -229,3 +229,22 @@ test("an existing record without displayable values is not an absent reading", (
   assert.equal(connection.age, "Connection event only");
   assert.notEqual(connection.freshness, "live");
 });
+
+test("window analytics preserve zero and exclude missing, text and non-finite samples", () => {
+  const { readingSummary } = createLoader()("src/lib/reading-summary.ts");
+  assert.equal(
+    readingSummary(
+      [{ pm25: null }, { pm25: "12" }, { pm25: Infinity }],
+      "pm25",
+    ),
+    null,
+  );
+  assert.deepEqual(
+    readingSummary([{ pm25: 0 }, { pm25: 6 }, { pm25: 12 }, {}], "pm25"),
+    { count: 3, minimum: 0, maximum: 12, average: 6 },
+  );
+  assert.deepEqual(
+    readingSummary([{ temperature: -8 }, { temperature: 2 }], "temperature"),
+    { count: 2, minimum: -8, maximum: 2, average: -3 },
+  );
+});

@@ -258,3 +258,8 @@ h3:not([class*="text-"]) {
 .fleet-unreported summary { cursor: pointer; color: var(--color-ink); width: fit-content; }
 .fleet-unreported summary:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 4px; }
 .fleet-unreported p { margin-top: .75rem; max-width: 70ch; line-height: 1.7; }
+
+.device-trends, .device-location { margin-top: 3rem; padding-top: 2rem; border-top: 1px solid var(--border); min-width: 0; }
+.trend-summary { display: flex; flex-wrap: wrap; gap: 1.5rem 3rem; margin-top: 1rem; }
+.device-trends label { display: grid; gap: .5rem; max-width: 100%; }
+.device-trends select { max-width: 100%; }
