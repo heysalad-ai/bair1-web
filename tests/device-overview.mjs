@@ -184,3 +184,48 @@ test("canonical app routing retains device context and the sign-in callback quer
       .includes(`code=${code}&state=${state}`),
   );
 });
+
+test("the overview query includes non-air measurements used by real units", async () => {
+  const { parse } = await import("graphql");
+  const query = parse(snapshotBatchQuery([randomUUID()]).query);
+  const fields = query.definitions[0].selectionSet.selections
+    .find((field) => field.alias?.value === "r0")
+    .selectionSet.selections.map((field) => field.name.value);
+  for (const field of [
+    "adcD3Raw",
+    "adcD2InputVoltage",
+    "altitudeMeters",
+    "capturedAt",
+  ])
+    assert.ok(fields.includes(field), `Missing ${field} from overview request`);
+  const summary = deviceOverview(
+    {
+      reading: { adcD3Raw: 0, capturedAt: new Date().toISOString() },
+      telemetry: null,
+    },
+    Date.now(),
+  );
+  assert.equal(summary.value, "0");
+  assert.equal(summary.label, "D3 ADC");
+  assert.equal(summary.status, "Recent data");
+});
+test("an existing record without displayable values is not an absent reading", () => {
+  const now = Date.now();
+  const recorded = deviceOverview(
+    {
+      reading: { gasRaw: 200, capturedAt: new Date(now - 60000).toISOString() },
+      telemetry: null,
+    },
+    now,
+  );
+  assert.equal(recorded.status, "No measurements reported");
+  assert.match(recorded.age, /Record: 1 min ago/);
+  assert.equal(recorded.value, "—");
+  const connection = deviceOverview(
+    { reading: null, telemetry: { receivedAt: new Date(now).toISOString() } },
+    now,
+  );
+  assert.equal(connection.status, "No measurements reported");
+  assert.equal(connection.age, "Connection event only");
+  assert.notEqual(connection.freshness, "live");
+});

@@ -60,6 +60,24 @@ export function deviceOverview(snapshot: DeviceSnapshot, now: number) {
       age: time ? observationLabel(time, now) : "Capture time unknown",
     };
   }
+  if (snapshot.reading || snapshot.telemetry) {
+    const capturedAt =
+      snapshot.reading?.capturedAt || snapshot.telemetry?.measurementAt;
+    const knownTime =
+      typeof capturedAt === "string" && Number.isFinite(Date.parse(capturedAt));
+    return {
+      value: "—",
+      label: "Measurement",
+      unit: "",
+      freshness: "unknown",
+      status: "No measurements reported",
+      age: knownTime
+        ? `Record: ${observationLabel(capturedAt as string, now)}`
+        : snapshot.telemetry?.receivedAt
+          ? "Connection event only"
+          : "Capture time unknown",
+    };
+  }
   return {
     value: "—",
     label: "Measurement",
@@ -75,7 +93,7 @@ export function snapshotBatchQuery(ids: string[]) {
   if (!ids.length || ids.length > SNAPSHOT_BATCH_SIZE)
     throw new RangeError("Invalid snapshot batch size");
   return {
-    query: `query DeviceOverview(${ids.map((_, i) => `$id${i}: String!`).join(", ")}) { ${ids.map((_, i) => `r${i}: latestReading(deviceId: $id${i}) { capturedAt receivedAt pm25 pm1 pm4 pm10 temperature humidity pressure batteryVoltage } t${i}: notecardTelemetry(deviceId: $id${i}) { measurementAt receivedAt temperature humidity pressure pressureUnit batteryVoltage temperatureAt humidityAt pressureAt batteryVoltageAt }`).join(" ")} }`,
+    query: `query DeviceOverview(${ids.map((_, i) => `$id${i}: String!`).join(", ")}) { ${ids.map((_, i) => `r${i}: latestReading(deviceId: $id${i}) { capturedAt receivedAt ${measurementFields.map((field) => field.field).join(" ")} } t${i}: notecardTelemetry(deviceId: $id${i}) { measurementAt receivedAt temperature humidity pressure pressureUnit batteryVoltage temperatureAt humidityAt pressureAt batteryVoltageAt }`).join(" ")} }`,
     variables: Object.fromEntries(ids.map((id, i) => [`id${i}`, id])),
   };
 }
