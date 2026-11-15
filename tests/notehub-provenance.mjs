@@ -26,7 +26,7 @@ test('host sensor capture time and origin survive delayed Notehub queuing withou
  assert.equal(out.sanitizedPayload.sourceSample.eventId,input.body.eventId);
  assert.equal(out.sanitizedPayload.sourceSample.sequence,input.body.sequence);
  assert.notEqual(out.publicDeviceId,input.body.deviceId);
- assert.equal(out.eventId,input.event);
+ assert.equal(out.eventId,input.body.eventId);
  assert.deepEqual(out.sanitizedPayload.sps30,{valid:true,pm1:1,pm25:2,pm4:3,pm10:4,nc05:10,nc1:20,nc25:30,nc4:40,nc10:50,typicalParticleSize:0.5,numberConcentrationUnits:'#/cm3',massConcentrationUnits:'µg/m3',typicalParticleSizeUnits:'µm'});
 });
 test('invalid or future source capture times fall back to gateway time',()=>{
@@ -46,4 +46,17 @@ test('unverified origin tuples and malformed particle values are omitted from re
  assert.equal(out.sanitizedPayload.imei,undefined);
  assert.equal(out.sanitizedPayload.iccid,undefined);
  assert.equal(out.capturedAt,new Date(input.when*1000).toISOString());
+});
+test('lost host acknowledgement uses stable sample identity across distinct Notehub events and gateway enrichment',()=>{
+ const input=sensorEvent(),options={idSalt:randomUUID()};
+ const a=normalizeNotehubEvent(input,options);
+ const b=normalizeNotehubEvent({...input,event:randomUUID(),when:input.when+10,best_lat:1,best_lon:2,transport:'cell'},options);
+ assert.equal(a.eventId,input.body.eventId);
+ assert.equal(b.eventId,a.eventId);
+ assert.deepEqual(b.identityPayload,a.identityPayload);
+ assert.notDeepEqual(b.sanitizedPayload,a.sanitizedPayload);
+ const changed=normalizeNotehubEvent({...input,body:{...input.body,pm25:99}},options);
+ assert.notDeepEqual(changed.identityPayload,a.identityPayload);
+ const other=normalizeNotehubEvent({...input,device:randomUUID()},options);
+ assert.notEqual(other.publicDeviceId,a.publicDeviceId);
 });

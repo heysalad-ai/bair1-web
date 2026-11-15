@@ -126,6 +126,7 @@ export async function POST(req: NextRequest) {
           capturedAt: normalized.captureKnown ? normalized.capturedAt : null,
           capturedAtSource: normalized.capturedAtSource,
           eventId: normalized.eventId,
+          identityPayload: normalized.identityPayload,
           aqi: normalized.aqi,
           gasRaw: null,
           gasVoltage: null,
