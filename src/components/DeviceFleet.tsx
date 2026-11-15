@@ -19,12 +19,14 @@ export default function DeviceFleet({
   workspaces,
   search,
   onSearch,
+  onRefreshDevices,
   purpose = "home",
 }: {
   devices: DeviceOption[];
   workspaces: Record<string, string>;
   search: string;
   onSearch: (value: string) => void;
+  onRefreshDevices: () => Promise<void>;
   purpose?: string;
 }) {
   const request = useAuthenticatedFetch();
@@ -165,9 +167,12 @@ export default function DeviceFleet({
           type="button"
           className="access-button"
           disabled={refreshing || !visible.length}
-          onClick={() => setRevision((value) => value + 1)}
+          onClick={() => {
+            setRevision((value) => value + 1);
+            void onRefreshDevices();
+          }}
         >
-          {refreshing ? "Refreshing…" : "Refresh readings"}
+          {refreshing ? "Refreshing…" : "Refresh devices"}
         </button>
       </div>
       <p className="fleet-help">

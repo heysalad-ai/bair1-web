@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useCallback, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import DeviceFleet from "@/components/DeviceFleet";
@@ -87,7 +87,10 @@ function DashboardContent() {
     telemetry: Measurement | null;
   } | null>(null);
   const [snapshotError, setSnapshotError] = useState("");
+  const deviceLoadBusy = useRef(false);
   const loadDevices = useCallback(async () => {
+    if (deviceLoadBusy.current) return;
+    deviceLoadBusy.current = true;
     setState((current) => (current === "ready" ? "ready" : "loading"));
     setError("");
     try {
@@ -132,12 +135,18 @@ function DashboardContent() {
       setDevices([]);
       setState("error");
       setError(e instanceof Error ? e.message : "Devices unavailable");
+    } finally {
+      deviceLoadBusy.current = false;
     }
   }, [request]);
   useEffect(() => {
     if (isAuthenticated) {
       const timer = setTimeout(() => void loadDevices(), 0);
-      return () => clearTimeout(timer);
+      const interval = setInterval(() => void loadDevices(), 60_000);
+      return () => {
+        clearTimeout(timer);
+        clearInterval(interval);
+      };
     }
   }, [isAuthenticated, loadDevices]);
   useEffect(() => {
@@ -310,6 +319,7 @@ function DashboardContent() {
                   workspaces={workspaces}
                   search={fleetSearch}
                   onSearch={setFleetSearch}
+                  onRefreshDevices={loadDevices}
                   purpose={tab}
                 />
               </>

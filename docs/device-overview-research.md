@@ -10,7 +10,7 @@ For Bear One's existing consumer-facing design, the chosen adaptation is a roomy
 
 ## Implemented behavior
 
-- All accessible device metadata is searchable by name, ID or workspace; 24 units appear per page.
+- All accessible device metadata is searchable by name, ID or workspace; 24 units appear per page. The registry refreshes each minute and on explicit refresh so newly enrolled units appear without reloading the page.
 - Visible units progressively load measurements in sequential four-unit GraphQL batches and refresh each minute. Changing search/page aborts the old work. Per-unit failures clear that unit's values without hiding other devices.
 - The overview uses the latest available reported measurement, with particulate data preferred. A missing value is a dash; zero remains zero. Stale, unknown-clock, waiting and unavailable states are distinct.
 - Freshness comes from that measurement's capture time, never a new gateway receipt. Labels describe data recency, not electrical health, cellular registration or a manufacturing pass.
