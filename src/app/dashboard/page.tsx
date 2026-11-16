@@ -4,8 +4,12 @@ import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import DeviceFleet from "@/components/DeviceFleet";
-import DeviceTrends from "@/components/DeviceTrends";
-import DeviceLocation from "@/components/DeviceLocation";
+import DeviceDetail from "@/components/DeviceDetail";
+import { snapshotTone, type SnapshotState } from "@/components/device/DeviceDetailView";
+import BearFigure from "@/components/bear/BearFigure";
+import StateMessage from "@/components/ui/StateMessage";
+import { Breadcrumbs, Button, StatusIndicator } from "@/components/ui/kit";
+import { MotionConfig, motion } from "framer-motion";
 import { dashboardHref } from "@/lib/device-overview";
 import { useAuth0 } from "@auth0/auth0-react";
 import Logo from "@/components/Logo";
@@ -15,7 +19,6 @@ import AIChatView from "@/components/AIChatView";
 import AdminView from "@/components/AdminView";
 import ConnectionView from "@/components/ConnectionView";
 import {
-  MeasurementView,
   ReadingHistory,
   type Measurement,
 } from "@/components/MeasurementView";
@@ -89,6 +92,8 @@ function DashboardContent() {
     telemetry: Measurement | null;
   } | null>(null);
   const [snapshotError, setSnapshotError] = useState("");
+  const [snapshotRevision, setSnapshotRevision] = useState(0);
+  const [snapshotAt, setSnapshotAt] = useState(0);
   const deviceLoadBusy = useRef(false);
   const loadDevices = useCallback(async () => {
     if (deviceLoadBusy.current) return;
@@ -194,8 +199,10 @@ function DashboardContent() {
           });
           setSnapshotError("");
           setSnapshotDenied(false);
+          setSnapshotAt(Date.now());
         }
       } catch (e) {
+        if (controller.signal.aborted) return;
         if (active) {
           setSnapshot(null);
           setSnapshotDenied(false);
@@ -216,9 +223,22 @@ function DashboardContent() {
       clearTimeout(timer);
       clearInterval(interval);
     };
-  }, [selected, isAuthenticated, request]);
+  }, [selected, isAuthenticated, request, snapshotRevision]);
   const device = devices.find((d) => d.deviceId === selected);
   const current = snapshot?.deviceId === selected ? snapshot : null;
+  const snapshotState: SnapshotState = snapshotError
+    ? { status: snapshotDenied ? "denied" : "error", message: snapshotError }
+    : current
+      ? {
+          status: "ready",
+          snapshot: { reading: current.reading, telemetry: current.telemetry },
+        }
+      : { status: "loading" };
+  const retrySnapshot = () => {
+    setSnapshotError("");
+    setSnapshotRevision((value) => value + 1);
+    void loadDevices();
+  };
   if (isLoading)
     return (
       <main className="m-auto p-8" role="status">
@@ -227,14 +247,20 @@ function DashboardContent() {
     );
   if (!isAuthenticated)
     return (
-      <main className="m-auto max-w-md p-8">
+      <main className="m-auto w-full max-w-md p-8">
         <Logo />
-        <h1 className="mt-8 text-3xl font-semibold">Your devices, your data</h1>
-        <p className="my-5 text-muted">
+        <div className="b1-bear mt-10">
+          <div className="b1-bear-figure">
+            <BearFigure mood="idle" size={88} />
+          </div>
+          <p className="b1-bubble">Sign in and I’ll show you your units.</p>
+        </div>
+        <h1 className="b1-title mt-8">Your devices, your data</h1>
+        <p className="b1-sub my-5">
           Sign in to view your measurements and manage access.
         </p>
-        <button
-          className="access-button"
+        <Button
+          variant="primary"
           onClick={() =>
             loginWithRedirect({
               appState: {
@@ -244,192 +270,185 @@ function DashboardContent() {
           }
         >
           Sign in
-        </button>
+        </Button>
       </main>
     );
+  const tone = snapshotTone(snapshotState, snapshotAt);
+  const workspaceLabel = device
+    ? (workspaces[device.orgId] ??
+      (device.isOwner && !device.orgId.startsWith("workspace:")
+        ? "Personal devices"
+        : "Workspace name unavailable"))
+    : "";
+  const tabs: { id: Tab; label: string }[] = [
+    { id: "home", label: "Overview" },
+    { id: "analytics", label: "History & export" },
+    { id: "map", label: "Map" },
+    { id: "ai", label: "Air Guide" },
+    { id: "developer", label: "Device & access" },
+  ];
   return (
-    <main className="min-h-screen flex-1 lg:pl-64">
-      <header className="border-b border-border px-5 py-4 lg:px-10">
-        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4">
-          <nav className="fleet-breadcrumb" aria-label="Device navigation">
-            <Link href="/dashboard" aria-current={!device ? "page" : undefined}>
-              All devices
-            </Link>
-            {device && (
-              <>
-                <span aria-hidden="true">/</span>
-                <span className="fleet-current">{device.name}</span>
-              </>
-            )}
-          </nav>
-          <div className="text-sm">
-            <span>{user?.name}</span>
-            <button
-              className="ml-4 underline underline-offset-4"
-              onClick={() =>
-                logout({ logoutParams: { returnTo: window.location.origin } })
+    <MotionConfig reducedMotion="user">
+      <main className="min-h-screen min-w-0 flex-1 lg:pl-64">
+        <header className="border-b border-[var(--b1-line)] px-5 py-4 lg:px-10">
+          <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4">
+            <Breadcrumbs
+              items={
+                device
+                  ? [
+                      { label: "All units", href: "/dashboard" },
+                      { label: device.name },
+                    ]
+                  : [{ label: "All units" }]
               }
+            />
+            <div className="flex items-center gap-3 text-sm">
+              <span className="max-w-[16rem] truncate text-[var(--b1-ink-2)]">
+                {user?.name}
+              </span>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() =>
+                  logout({ logoutParams: { returnTo: window.location.origin } })
+                }
+              >
+                Sign out
+              </Button>
+            </div>
+          </div>
+        </header>
+        <div className="mx-auto max-w-6xl px-5 py-8 pb-28 lg:px-10">
+          {state === "loading" && (
+            <StateMessage kind="loading" title="Loading your units…" headingLevel={1}>
+              <p>Fetching the units you can access.</p>
+            </StateMessage>
+          )}
+          {state === "error" && (
+            <StateMessage
+              kind="error"
+              title="Units unavailable"
+              headingLevel={1}
+              actions={<Button onClick={loadDevices}>Retry</Button>}
             >
-              Sign out
-            </button>
-          </div>
-        </div>
-      </header>
-      <div className="mx-auto max-w-6xl px-5 py-8 pb-28 lg:px-10">
-        {state === "loading" && <p role="status">Loading devices…</p>}
-        {state === "error" && (
-          <div role="alert">
-            <p>{error}</p>
-            <button onClick={loadDevices} className="access-button mt-4">
-              Retry
-            </button>
-          </div>
-        )}
-        {state === "ready" && (
-          <>
-            {tab === "developer" ? (
-              <ConnectionView device={device} onChange={loadDevices} />
-            ) : tab === "admin" && role === "super_admin" ? (
-              <AdminView />
-            ) : !devices.length ? (
-              <section>
-                <h1 className="text-3xl font-semibold">
-                  Connect your first device
-                </h1>
-                <p className="my-4 max-w-xl text-muted">
-                  Use the one-time enrollment code supplied for your device.
-                  Devices stay private until their owner chooses another
-                  visibility.
-                </p>
-                <button
-                  className="access-button"
-                  onClick={() => setTab("developer")}
+              <p>{error}</p>
+            </StateMessage>
+          )}
+          {state === "ready" && (
+            <motion.div
+              key={`${selected}|${tab}`}
+              initial={{ opacity: 0.6, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+            >
+              {tab === "developer" ? (
+                <ConnectionView device={device} onChange={loadDevices} />
+              ) : tab === "admin" && role === "super_admin" ? (
+                <AdminView />
+              ) : !devices.length ? (
+                <StateMessage
+                  kind="empty"
+                  title="Connect your first unit"
+                  headingLevel={1}
+                  actions={
+                    <Button variant="primary" onClick={() => setTab("developer")}>
+                      Enrol a device
+                    </Button>
+                  }
                 >
-                  Enroll a device
-                </button>
-              </section>
-            ) : !device ? (
-              <>
-                {requestedDevice && (
-                  <p className="mb-6 text-sm" role="status">
-                    That device is unavailable or your access changed. Choose a
-                    device below.
+                  <p>
+                    Use the one-time enrolment code supplied with your device.
+                    Devices stay private until their owner chooses another
+                    visibility.
                   </p>
-                )}
-                <DeviceFleet
-                  devices={devices}
-                  workspaces={workspaces}
-                  search={fleetSearch}
-                  onSearch={setFleetSearch}
-                  onRefreshDevices={loadDevices}
-                  purpose={tab}
-                />
-              </>
-            ) : (
-              <>
-                <div className="mb-8">
-                  <h1 className="text-3xl font-semibold">{device.name}</h1>
-                  <p className="fleet-detail-id">{device.deviceId}</p>
-                  <p className="mt-2 break-words text-sm text-muted">
-                    {device.visibility === "workspace"
-                      ? "Workspace access"
-                      : device.visibility === "public"
-                        ? "Published feed enabled"
-                        : "Private device"}{" "}
-                    ·{" "}
-                    {device.isOwner
-                      ? "You own this device"
-                      : "You can view this device"}{" "}
-                    · Workspace:{" "}
-                    {workspaces[device.orgId] ??
-                      (device.isOwner && !device.orgId.startsWith("workspace:")
-                        ? "Personal devices"
-                        : "Name unavailable")}
-                  </p>
-                </div>
-                <nav className="fleet-detail-tabs" aria-label="Device views">
-                  <Link
-                    href={dashboardHref(selected)}
-                    aria-current={tab === "home" ? "page" : undefined}
-                  >
-                    Device overview
-                  </Link>
-                  <Link
-                    href={dashboardHref(selected, "analytics")}
-                    aria-current={tab === "analytics" ? "page" : undefined}
-                  >
-                    History & export
-                  </Link>
-                  <Link
-                    href={dashboardHref(selected, "map")}
-                    aria-current={tab === "map" ? "page" : undefined}
-                  >
-                    Map
-                  </Link>
-                  <Link href={dashboardHref(selected, "developer")}>
-                    Device & access
-                  </Link>
-                </nav>
-                {tab === "home" &&
-                  (snapshotError ? (
-                    <div role="alert">
-                      <h2 className="mb-2 text-xl font-semibold">
-                        {snapshotDenied
-                          ? "Access unavailable"
-                          : "Service unavailable"}
-                      </h2>
-                      <p>{snapshotError}</p>
-                      <button
-                        className="access-button mt-4"
-                        onClick={loadDevices}
-                      >
-                        Refresh devices
-                      </button>
+                </StateMessage>
+              ) : !device ? (
+                <>
+                  {requestedDevice && (
+                    <p
+                      className="mb-6 rounded-xl border border-[var(--b1-line-strong)] bg-[var(--b1-surface)] px-4 py-3 text-sm"
+                      role="status"
+                    >
+                      That unit is unavailable or your access changed. Choose a
+                      unit below.
+                    </p>
+                  )}
+                  <DeviceFleet
+                    devices={devices}
+                    workspaces={workspaces}
+                    search={fleetSearch}
+                    onSearch={setFleetSearch}
+                    onRefreshDevices={loadDevices}
+                    purpose={tab}
+                  />
+                </>
+              ) : (
+                <>
+                  <div className="mb-6 flex flex-col gap-3">
+                    <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+                      <h1 className="b1-title min-w-0 break-words">
+                        {device.name}
+                      </h1>
+                      <StatusIndicator tone={tone} pill />
                     </div>
-                  ) : current ? (
-                    <>
-                      <MeasurementView
-                        focused
-                        reading={current.reading}
-                        telemetry={current.telemetry}
-                      />
-                      <DeviceTrends key={selected} deviceId={selected} />
-                      <DeviceLocation
+                    <p className="b1-sub break-words">
+                      {device.visibility === "workspace"
+                        ? "Workspace access"
+                        : device.visibility === "public"
+                          ? "Published feed enabled"
+                          : "Private device"}{" "}
+                      ·{" "}
+                      {device.isOwner
+                        ? "You own this device"
+                        : "You can view this device"}{" "}
+                      · {workspaceLabel}
+                    </p>
+                  </div>
+                  <nav className="b1-tabs mb-8" aria-label="Unit views">
+                    {tabs.map((item) => (
+                      <Link
+                        key={item.id}
+                        href={dashboardHref(selected, item.id)}
+                        aria-current={tab === item.id ? "page" : undefined}
+                      >
+                        {item.label}
+                      </Link>
+                    ))}
+                  </nav>
+                  {tab === "home" && (
+                    <DeviceDetail
+                      key={selected}
+                      device={device}
+                      snapshotState={snapshotState}
+                      onRetrySnapshot={retrySnapshot}
+                    />
+                  )}
+                  {tab === "analytics" && (
+                    <ReadingHistory key={selected} deviceId={selected} />
+                  )}
+                  {tab === "map" && <MapView key={selected} deviceId={selected} />}
+                  {tab === "ai" && (
+                    <div>
+                      <p className="mb-5 text-sm text-muted">
+                        Air Guide uses the selected device and external
+                        environmental context. Generated advice is separate
+                        from sensor measurements.
+                      </p>
+                      <AIChatView
+                        key={selected}
+                        deviceId={selected}
                         lat={device.lat}
                         lng={device.lng}
-                        reading={current.reading}
                       />
-                    </>
-                  ) : (
-                    <p role="status">Loading measurements…</p>
-                  ))}
-                {tab === "analytics" && (
-                  <ReadingHistory key={selected} deviceId={selected} />
-                )}
-                {tab === "map" && (
-                  <MapView key={selected} deviceId={selected} />
-                )}
-                {tab === "ai" && (
-                  <div>
-                    <p className="mb-5 text-sm text-muted">
-                      Air Guide uses the selected device and external
-                      environmental context. Generated advice is separate from
-                      sensor measurements.
-                    </p>
-                    <AIChatView
-                      key={selected}
-                      deviceId={selected}
-                      lat={device.lat}
-                      lng={device.lng}
-                    />
-                  </div>
-                )}
-              </>
-            )}
-          </>
-        )}
-      </div>
-      <Navigation active={tab} onChange={setTab} role={role} />
-    </main>
+                    </div>
+                  )}
+                </>
+              )}
+            </motion.div>
+          )}
+        </div>
+        <Navigation active={tab} onChange={setTab} role={role} />
+      </main>
+    </MotionConfig>
   );
 }

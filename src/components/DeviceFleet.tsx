@@ -1,18 +1,19 @@
 "use client";
 
-import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { DeviceOption } from "@/app/dashboard/page";
+import FleetView from "@/components/fleet/FleetView";
 import { useAuthenticatedFetch } from "@/lib/use-authenticated-fetch";
 import {
-  dashboardHref,
   decodeSnapshotBatch,
-  deviceOverview,
   DEVICE_PAGE_SIZE,
   SNAPSHOT_BATCH_SIZE,
   snapshotBatchQuery,
   type SnapshotEntry,
 } from "@/lib/device-overview";
+import { entryCaptureKey, hasNewCapture } from "@/lib/fleet-insights";
+
+const NEW_READING_MS = 8_000;
 
 export default function DeviceFleet({
   devices,
@@ -35,40 +36,41 @@ export default function DeviceFleet({
   const [revision, setRevision] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
   const [now, setNow] = useState(() => Date.now());
+  const [fetchedAt, setFetchedAt] = useState<number | null>(null);
+  const [fresh, setFresh] = useState<Record<string, number>>({});
+  const seen = useRef(new Map<string, number | null>());
+
+  const workspaceName = useMemo(
+    () => (device: { orgId: string; isOwner: boolean }) =>
+      workspaces[device.orgId] ??
+      (device.isOwner && !device.orgId.startsWith("workspace:")
+        ? "Personal devices"
+        : "Workspace name unavailable"),
+    [workspaces],
+  );
   const filtered = useMemo(
     () =>
       devices
         .filter((device) =>
-          [
-            device.name,
-            device.deviceId,
-            workspaces[device.orgId] ??
-              (device.isOwner && !device.orgId.startsWith("workspace:")
-                ? "Personal devices"
-                : "Workspace name unavailable"),
-          ].some((text) =>
-            text
-              .toLocaleLowerCase()
-              .includes(search.trim().toLocaleLowerCase()),
+          [device.name, device.deviceId, workspaceName(device)].some((text) =>
+            text.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase()),
           ),
         )
         .sort(
           (a, b) =>
-            a.name.localeCompare(b.name) ||
-            a.deviceId.localeCompare(b.deviceId),
+            a.name.localeCompare(b.name) || a.deviceId.localeCompare(b.deviceId),
         ),
-    [devices, search, workspaces],
+    [devices, search, workspaceName],
   );
-  const lastPage = Math.max(
-    0,
-    Math.ceil(filtered.length / DEVICE_PAGE_SIZE) - 1,
-  );
+  const lastPage = Math.max(0, Math.ceil(filtered.length / DEVICE_PAGE_SIZE) - 1);
   const currentPage = Math.min(page, lastPage);
   const visible = filtered.slice(
     currentPage * DEVICE_PAGE_SIZE,
     (currentPage + 1) * DEVICE_PAGE_SIZE,
   );
   const idsKey = JSON.stringify(visible.map((device) => device.deviceId));
+
+  // Bounded: only the visible page (≤24 units) in batches of 4, latest values only.
   useEffect(() => {
     const ids = JSON.parse(idsKey) as string[];
     const controller = new AbortController();
@@ -95,21 +97,29 @@ export default function DeviceFleet({
           const result = await response.json();
           updates = decodeSnapshotBatch(batch, result, response.status);
         } catch {
+          if (!active) break;
           updates = Object.fromEntries(
             batch.map((id) => [
               id,
-              {
-                status: "error",
-                message: "Readings unavailable. Try refreshing.",
-              },
+              { status: "error", message: "Readings unavailable. Try refreshing." },
             ]),
           );
         }
-        if (active) setSnapshots((current) => ({ ...current, ...updates }));
+        if (!active) break;
+        const arrivals: Record<string, number> = {};
+        for (const [id, entry] of Object.entries(updates)) {
+          const next = entryCaptureKey(entry);
+          if (hasNewCapture(seen.current.get(id), next)) arrivals[id] = Date.now();
+          if (next !== null || !seen.current.has(id)) seen.current.set(id, next);
+        }
+        setSnapshots((current) => ({ ...current, ...updates }));
+        if (Object.keys(arrivals).length)
+          setFresh((current) => ({ ...current, ...arrivals }));
       }
       if (active) {
         setRefreshing(false);
         setNow(Date.now());
+        setFetchedAt(Date.now());
       }
       busy = false;
     }
@@ -125,199 +135,43 @@ export default function DeviceFleet({
     };
   }, [idsKey, request, revision]);
 
-  function workspaceName(device: DeviceOption) {
-    return (
-      workspaces[device.orgId] ??
-      (device.isOwner && !device.orgId.startsWith("workspace:")
-        ? "Personal devices"
-        : "Workspace name unavailable")
-    );
-  }
+  // "New reading" cues expire on their own.
+  useEffect(() => {
+    if (!Object.keys(fresh).length) return;
+    const timer = setTimeout(() => {
+      const cutoff = Date.now() - NEW_READING_MS;
+      setFresh((current) =>
+        Object.fromEntries(Object.entries(current).filter(([, at]) => at > cutoff)),
+      );
+    }, NEW_READING_MS);
+    return () => clearTimeout(timer);
+  }, [fresh]);
+
   return (
-    <section className="device-fleet" aria-labelledby="fleet-heading">
-      <div className="fleet-heading">
-        <div>
-          <h1 id="fleet-heading" className="text-3xl font-semibold">
-            All devices
-          </h1>
-          <p>
-            {purpose !== "home"
-              ? `Choose a device to open its ${purpose === "analytics" ? "history" : purpose === "ai" ? "Air Guide" : "map"}.`
-              : "Check each unit’s latest measurement, then open it for a closer look."}
-          </p>
-        </div>
-        <span className="fleet-count">
-          {devices.length} {devices.length === 1 ? "device" : "devices"}
-        </span>
-      </div>
-      <div className="fleet-toolbar">
-        <label className="fleet-search">
-          Find a device
-          <input
-            type="search"
-            value={search}
-            placeholder="Name, device ID or workspace"
-            onChange={(event) => {
-              onSearch(event.target.value);
-              setPage(0);
-            }}
-          />
-        </label>
-        <button
-          type="button"
-          className="access-button"
-          disabled={refreshing || !visible.length}
-          onClick={() => {
-            setRevision((value) => value + 1);
-            void onRefreshDevices();
-          }}
-        >
-          {refreshing ? "Refreshing…" : "Refresh devices"}
-        </button>
-      </div>
-      <p className="fleet-help">
-        Reading age uses the sensor’s capture time. Recent data does not confirm
-        that a device is currently connected.
-      </p>
-      {!filtered.length ? (
-        <div className="fleet-empty">
-          <h2 className="text-xl font-semibold">No matching devices</h2>
-          <p>Try a different name, device ID or workspace.</p>
-          <button
-            className="access-button"
-            onClick={() => {
-              onSearch("");
-              setPage(0);
-            }}
-          >
-            Clear search
-          </button>
-        </div>
-      ) : (
-        <>
-          <div className="fleet-columns" aria-hidden="true">
-            <span>Device</span>
-            <span>Latest measurement</span>
-            <span>Reading age</span>
-            <span />
-          </div>
-          <ul className="fleet-list">
-            {visible.map((device) => {
-              const entry = snapshots[device.deviceId];
-              const summary =
-                entry?.status === "ready"
-                  ? deviceOverview(entry.snapshot, now)
-                  : null;
-              return (
-                <li key={device.deviceId} className="fleet-unit">
-                  <div className="fleet-identity">
-                    <h2 className="text-base font-semibold">{device.name}</h2>
-                    <p className="fleet-id">{device.deviceId}</p>
-                    <p>
-                      {workspaceName(device)} ·{" "}
-                      {device.isOwner ? "Owned by you" : "Read access"}
-                    </p>
-                  </div>
-                  <div className="fleet-reading">
-                    {!entry ? (
-                      <span
-                        className="fleet-skeleton"
-                        aria-label="Loading reading"
-                      />
-                    ) : (
-                      <>
-                        <span className="fleet-value">
-                          {summary?.value ?? "—"}
-                          <small>{summary?.unit ?? ""}</small>
-                        </span>
-                        <span>
-                          {summary?.label ?? "Measurement unavailable"}
-                        </span>
-                      </>
-                    )}
-                  </div>
-                  <div className="fleet-status">
-                    {!entry ? (
-                      <span className="fleet-loading">
-                        Loading measurements…
-                      </span>
-                    ) : entry.status === "error" ? (
-                      <>
-                        <span className="fleet-state" data-freshness="error">
-                          Unable to load
-                        </span>
-                        <span>{entry.message}</span>
-                      </>
-                    ) : (
-                      <>
-                        <span
-                          className="fleet-state"
-                          data-freshness={summary?.freshness}
-                        >
-                          {summary?.status}
-                        </span>
-                        {summary && summary.age !== summary.status && (
-                          <span>{summary.age}</span>
-                        )}
-                      </>
-                    )}
-                  </div>
-                  <Link
-                    className="fleet-open"
-                    href={dashboardHref(device.deviceId, purpose)}
-                    aria-label={`View device ${device.name}`}
-                  >
-                    View device
-                    <svg
-                      aria-hidden="true"
-                      width="16"
-                      height="16"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="1.7"
-                    >
-                      <path
-                        d="m9 5 7 7-7 7"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                    </svg>
-                  </Link>
-                </li>
-              );
-            })}
-          </ul>
-          <nav className="fleet-pagination" aria-label="Device pages">
-            <p aria-live="polite">
-              {currentPage * DEVICE_PAGE_SIZE + 1}–
-              {Math.min((currentPage + 1) * DEVICE_PAGE_SIZE, filtered.length)}{" "}
-              of {filtered.length} {search.trim() ? "matching " : ""}devices
-            </p>
-            {lastPage > 0 && (
-              <div>
-                <button
-                  className="access-button"
-                  disabled={currentPage === 0}
-                  onClick={() => setPage(currentPage - 1)}
-                >
-                  Previous
-                </button>
-                <span>
-                  Page {currentPage + 1} of {lastPage + 1}
-                </span>
-                <button
-                  className="access-button"
-                  disabled={currentPage === lastPage}
-                  onClick={() => setPage(currentPage + 1)}
-                >
-                  Next
-                </button>
-              </div>
-            )}
-          </nav>
-        </>
-      )}
-    </section>
+    <FleetView
+      devices={visible}
+      total={devices.length}
+      workspaceName={workspaceName}
+      search={search}
+      onSearch={(value) => {
+        onSearch(value);
+        setPage(0);
+      }}
+      snapshots={snapshots}
+      now={now}
+      refreshing={refreshing}
+      onRefresh={() => {
+        setRevision((value) => value + 1);
+        void onRefreshDevices();
+      }}
+      fresh={fresh}
+      page={currentPage}
+      lastPage={lastPage}
+      filteredCount={filtered.length}
+      pageSize={DEVICE_PAGE_SIZE}
+      onPage={setPage}
+      purpose={purpose}
+      fetchedAt={fetchedAt}
+    />
   );
 }
