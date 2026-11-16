@@ -2,6 +2,7 @@
 
 import { motion, useReducedMotion, type Transition } from "framer-motion";
 import { useId } from "react";
+import type { FacePose } from "@/lib/face-animation";
 import type { BearMood } from "@/lib/bear-state";
 
 /**
@@ -30,7 +31,8 @@ const EYE_CLOSED = "M468,398 C492,418 532,410 534,362";
 const PAW =
   "M288,1060 C282,960 298,872 336,830 C368,796 424,800 436,846 C450,898 430,975 422,1060 Z";
 const PAW_PAD = "M330,905 C330,870 400,870 400,905 C400,945 330,945 330,905 Z";
-const PAW_TOES = "M338,842 C345,826 362,824 370,838 M376,834 C384,820 402,822 408,838";
+const PAW_TOES =
+  "M338,842 C345,826 362,824 370,838 M376,834 C384,820 402,822 408,838";
 
 const loop = (duration: number, delay = 0): Transition => ({
   duration,
@@ -43,17 +45,19 @@ export default function BearFigure({
   mood,
   size = 96,
   title,
+  face,
 }: {
   mood: BearMood;
   size?: number;
   title?: string;
+  face?: FacePose;
 }) {
   const reduce = useReducedMotion();
   const id = useId().replace(/:/g, "");
   const eyeOpen = mood !== "empty";
-  const orbFill =
-    mood === "empty" ? "var(--b1-surface-3, #2a332d)" : ORB;
+  const orbFill = mood === "empty" ? "var(--b1-surface-3, #2a332d)" : ORB;
   const animate = !reduce;
+  const pose = animate && mood === "speaking" ? face : undefined;
 
   return (
     <svg
@@ -134,7 +138,11 @@ export default function BearFigure({
                 ? { scale: [1, 1.14, 1], opacity: [0.9, 0.35, 0.9] }
                 : { opacity: 0.9 }
             }
-            transition={animate ? { duration: 1.6, repeat: 2, ease: "easeInOut" } : undefined}
+            transition={
+              animate
+                ? { duration: 1.6, repeat: 2, ease: "easeInOut" }
+                : undefined
+            }
           />
         )}
       </motion.g>
@@ -158,22 +166,71 @@ export default function BearFigure({
             ? { duration: 1.8, ease: "easeInOut" }
             : mood === "attention"
               ? { duration: 2.2, ease: "easeInOut" }
-              : { scaleY: loop(mood === "empty" ? 6 : 4.4), rotate: { duration: 0.6 } }
+              : {
+                  scaleY: loop(mood === "empty" ? 6 : 4.4),
+                  rotate: { duration: 0.6 },
+                }
         }
       >
-        <path d={EAR} fill={BROWN} stroke={LINE} strokeWidth={SW} strokeLinejoin="round" />
-        <path d={EAR_INNER} fill={TAN} stroke={LINE} strokeWidth={SW} strokeLinejoin="round" />
+        <path
+          d={EAR}
+          fill={BROWN}
+          stroke={LINE}
+          strokeWidth={SW}
+          strokeLinejoin="round"
+        />
+        <path
+          d={EAR_INNER}
+          fill={TAN}
+          stroke={LINE}
+          strokeWidth={SW}
+          strokeLinejoin="round"
+        />
         <path d={HEAD} fill={BROWN} />
         <motion.g
           clipPath={`url(#${id}-head)`}
           style={{ transformOrigin: "690px 440px", transformBox: "view-box" }}
-          animate={animate && mood === "speaking" ? { scaleY: [1, 1.035, 1] } : { scaleY: 1 }}
-          transition={animate && mood === "speaking" ? loop(0.42) : { duration: 0.2 }}
+          animate={
+            pose
+              ? { scaleY: 1 + pose.jaw * 0.035 }
+              : animate && mood === "speaking"
+                ? { scaleY: [1, 1.035, 1] }
+                : { scaleY: 1 }
+          }
+          transition={
+            pose
+              ? { duration: 0 }
+              : animate && mood === "speaking"
+                ? loop(0.42)
+                : { duration: 0.2 }
+          }
         >
           <path d={MUZZLE} fill={TAN} stroke={LINE} strokeWidth={SW} />
-          <path d={MOUTH} fill="none" stroke={LINE} strokeWidth={SW} strokeLinecap="round" />
+          <path
+            d={MOUTH}
+            fill="none"
+            stroke={LINE}
+            strokeWidth={SW}
+            strokeLinecap="round"
+          />
+          {pose && (
+            <ellipse
+              cx="715"
+              cy={441 - pose.smile * 5}
+              rx={24 - pose.pucker * 10}
+              ry={pose.jaw * 22}
+              fill={LINE}
+              transform="rotate(-14 715 441)"
+            />
+          )}
         </motion.g>
-        <path d={HEAD} fill="none" stroke={LINE} strokeWidth={SW} strokeLinejoin="round" />
+        <path
+          d={HEAD}
+          fill="none"
+          stroke={LINE}
+          strokeWidth={SW}
+          strokeLinejoin="round"
+        />
 
         {/* Nose: sniffs while loading (the bear's job is sniffing the air) */}
         <motion.path
@@ -182,29 +239,50 @@ export default function BearFigure({
           stroke={LINE}
           strokeWidth={SW / 2}
           animate={
-            animate && mood === "loading"
-              ? { y: [0, -9, 0, -6, 0] }
-              : { y: 0 }
+            animate && mood === "loading" ? { y: [0, -9, 0, -6, 0] } : { y: 0 }
           }
-          transition={animate && mood === "loading" ? { duration: 0.9, repeat: Infinity, repeatDelay: 0.6 } : { duration: 0.2 }}
+          transition={
+            animate && mood === "loading"
+              ? { duration: 0.9, repeat: Infinity, repeatDelay: 0.6 }
+              : { duration: 0.2 }
+          }
         />
 
         {/* Eye: open + blinking when attentive, closed (logo pose) when resting */}
         {eyeOpen ? (
           <motion.g
             style={{ transformOrigin: "505px 386px", transformBox: "view-box" }}
-            animate={animate ? { scaleY: [1, 1, 0.08, 1] } : undefined}
+            animate={
+              pose
+                ? { scaleY: Math.max(0.08, 1 - pose.blink) }
+                : animate
+                  ? { scaleY: [1, 1, 0.08, 1] }
+                  : undefined
+            }
             transition={
-              animate
-                ? { duration: 0.28, times: [0, 0.4, 0.6, 1], repeat: Infinity, repeatDelay: 3.6 + (mood === "idle" ? 1.4 : 0) }
-                : undefined
+              pose
+                ? { duration: 0 }
+                : animate
+                  ? {
+                      duration: 0.28,
+                      times: [0, 0.4, 0.6, 1],
+                      repeat: Infinity,
+                      repeatDelay: 3.6 + (mood === "idle" ? 1.4 : 0),
+                    }
+                  : undefined
             }
           >
             <ellipse cx="505" cy="386" rx="23" ry="28" fill={LINE} />
             <circle cx="513" cy="375" r="7.5" fill="#fff" />
           </motion.g>
         ) : (
-          <path d={EYE_CLOSED} fill="none" stroke={LINE} strokeWidth={SW} strokeLinecap="round" />
+          <path
+            d={EYE_CLOSED}
+            fill="none"
+            stroke={LINE}
+            strokeWidth={SW}
+            strokeLinecap="round"
+          />
         )}
       </motion.g>
 
@@ -212,18 +290,41 @@ export default function BearFigure({
       {mood === "greeting" && (
         <g clipPath={`url(#${id}-frame)`}>
           <motion.g
-            style={{ transformOrigin: "356px 1000px", transformBox: "view-box" }}
+            style={{
+              transformOrigin: "356px 1000px",
+              transformBox: "view-box",
+            }}
             initial={animate ? { y: 260, rotate: 0 } : false}
             animate={
               animate
                 ? { y: [260, 0, 0, 0, 0, 260], rotate: [0, -14, 12, -10, 0, 0] }
                 : { y: 0 }
             }
-            transition={animate ? { duration: 2.2, times: [0, 0.22, 0.42, 0.62, 0.8, 1], ease: "easeInOut" } : undefined}
+            transition={
+              animate
+                ? {
+                    duration: 2.2,
+                    times: [0, 0.22, 0.42, 0.62, 0.8, 1],
+                    ease: "easeInOut",
+                  }
+                : undefined
+            }
           >
-            <path d={PAW} fill={BROWN} stroke={LINE} strokeWidth={SW} strokeLinejoin="round" />
+            <path
+              d={PAW}
+              fill={BROWN}
+              stroke={LINE}
+              strokeWidth={SW}
+              strokeLinejoin="round"
+            />
             <path d={PAW_PAD} fill={TAN} stroke={LINE} strokeWidth={SW / 1.4} />
-            <path d={PAW_TOES} fill="none" stroke={LINE} strokeWidth={SW / 1.4} strokeLinecap="round" />
+            <path
+              d={PAW_TOES}
+              fill="none"
+              stroke={LINE}
+              strokeWidth={SW / 1.4}
+              strokeLinecap="round"
+            />
           </motion.g>
         </g>
       )}

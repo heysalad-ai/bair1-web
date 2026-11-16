@@ -78,7 +78,7 @@ export default function BearCompanion({
   return (
     <div className="b1-bear" data-layout={layout}>
       <div className="b1-bear-figure">
-        <BearFigure mood={shown} size={size} />
+        <BearFigure mood={shown} size={size} face={speech.face} />
       </div>
       <div className="b1-bubble">
         <AnimatePresence mode="wait" initial={false}>
@@ -138,6 +138,12 @@ export default function BearCompanion({
             <p className="mt-2 text-xs text-[var(--b1-muted)]">
               AI-generated voice · OpenAI
             </p>
+            {speech.speaking && speech.faceStatus === "unavailable" && (
+              <p className="mt-2 text-xs text-[var(--b1-muted)]">
+                Face animation is unavailable. Your voice summary is still
+                playing.
+              </p>
+            )}
             {speech.loading && (
               <p role="status" className="mt-2 text-sm">
                 Preparing your voice summary…

@@ -1,11 +1,20 @@
+import {
+  sampleFace,
+  validateFaceAnimation,
+  type FaceAnimation,
+  type FacePose,
+} from "./face-animation";
 export type SpeechState = {
   loading: boolean;
   speaking: boolean;
   error: string;
+  face?: FacePose;
+  faceStatus?: string;
 };
 /** Abort and generation guards keep cancelled or superseded audio silent. */
 export class SpeechPlayback {
   private version = 0;
+  private animationFrame: number | null = null;
   private pending: AbortController | null = null;
   private audio: HTMLAudioElement | null = null;
   constructor(
@@ -15,6 +24,8 @@ export class SpeechPlayback {
   ) {}
   stop() {
     this.version++;
+    if (this.animationFrame !== null) cancelAnimationFrame(this.animationFrame);
+    this.animationFrame = null;
     this.pending?.abort();
     this.pending = null;
     if (this.audio) {
@@ -49,6 +60,17 @@ export class SpeechPlayback {
         !result.audio.startsWith("data:audio/wav;base64,")
       )
         throw new Error("Voice could not be loaded. Please try again.");
+      let animation: FaceAnimation | null = null;
+      if (result.animation) {
+        try {
+          animation = validateFaceAnimation(
+            result.animation,
+            result.animation.duration,
+          );
+        } catch {
+          /* Keep verified voice if animation is malformed. */
+        }
+      }
       const audio = this.makeAudio(result.audio);
       this.audio = audio;
       const finish = () => {
@@ -70,7 +92,20 @@ export class SpeechPlayback {
         audio.pause();
         return;
       }
-      this.onState({ loading: false, speaking: true, error: "" });
+      const tick = () => {
+        if (version !== this.version) return;
+        this.onState({
+          loading: false,
+          speaking: true,
+          error: "",
+          face: animation
+            ? sampleFace(animation, audio.currentTime)
+            : undefined,
+          faceStatus: animation ? "ready" : result.faceStatus,
+        });
+        if (animation) this.animationFrame = requestAnimationFrame(tick);
+      };
+      tick();
     } catch (cause) {
       if (version !== this.version) return;
       this.stop();
