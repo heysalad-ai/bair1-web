@@ -9,6 +9,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import { deviceOverview } from "@/lib/device-overview";
 import { useAuthenticatedFetch } from "@/lib/use-authenticated-fetch";
 import {
   historySeries,
@@ -22,9 +23,11 @@ export type Measurement = Record<string, string | number | null>;
 export function MeasurementView({
   reading,
   telemetry,
+  focused = false,
 }: {
   reading: Measurement | null;
   telemetry: Measurement | null;
+  focused?: boolean;
 }) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -36,23 +39,35 @@ export function MeasurementView({
     (field) =>
       reading?.[field.field] != null || telemetry?.[field.field] != null,
   );
+  const overview = deviceOverview({ reading, telemetry }, now);
+  const reported = measurementFields.filter(
+    (field) =>
+      reading?.[field.field] != null || telemetry?.[field.field] != null,
+  );
+  const notReported = measurementFields.filter(
+    (field) => !reported.includes(field),
+  );
   return (
     <section aria-label="Device measurements">
       <div className="flex flex-wrap items-baseline justify-between gap-3 border-b border-border pb-5">
         <div>
           <h2 className="text-xl font-semibold">Measurements</h2>
           <p className="mt-1 text-sm text-muted">
-            {timestamp
-              ? observationLabel(timestamp as string, now)
-              : hasValues
-                ? "Capture time unknown"
-                : "No measurement yet"}
+            {focused
+              ? overview.age
+              : timestamp
+                ? observationLabel(timestamp as string, now)
+                : hasValues
+                  ? "Capture time unknown"
+                  : "No measurement yet"}
           </p>
         </div>
         <span className="rounded-md bg-surface px-3 py-1 text-sm capitalize">
-          {!timestamp && hasValues
-            ? "unknown"
-            : measurementFreshness(timestamp as string, now)}
+          {focused
+            ? overview.status
+            : !timestamp && hasValues
+              ? "unknown"
+              : measurementFreshness(timestamp as string, now)}
         </span>
       </div>
       {!hasValues && (
@@ -62,7 +77,7 @@ export function MeasurementView({
         </p>
       )}
       <dl className="grid grid-cols-2 gap-x-6 sm:grid-cols-3 xl:grid-cols-4">
-        {[...measurementFields]
+        {[...(focused ? reported : measurementFields)]
           .sort(
             (a, b) =>
               Number(
@@ -110,11 +125,19 @@ export function MeasurementView({
             );
           })}
       </dl>
+      {focused && notReported.length > 0 && (
+        <details className="fleet-unreported">
+          <summary>Measurements not reported ({notReported.length})</summary>
+          <p>{notReported.map((field) => field.label).join(" · ")}</p>
+        </details>
+      )}
       <div className="mt-6 space-y-2 text-sm text-muted">
         <p>
           AQI:{" "}
           {reading?.aqi == null
-            ? "Not reported. Raw gas and ADC values are not calibrated AQI."
+            ? focused
+              ? "Not reported"
+              : "Not reported. Raw gas and ADC values are not calibrated AQI."
             : `${reading.aqi} · device-reported; calibration must be verified separately.`}
         </p>
         <p>
