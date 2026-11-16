@@ -9,11 +9,12 @@ import {
 } from "@/lib/nvidia-face";
 
 export const runtime = "nodejs";
-export const maxDuration = 60;
+export const maxDuration = 90;
 export async function POST(request: Request) {
   const auth = await requireAuth(request);
   if (auth instanceof Response) return auth;
   let text: string;
+  let animate = true;
   try {
     const body = await readJsonObject(request, 8192);
     if (
@@ -23,6 +24,7 @@ export async function POST(request: Request) {
     )
       throw new RangeError();
     text = body.text.trim();
+    animate = body.animate !== false;
   } catch {
     return Response.json(
       { error: "Choose a summary of up to 1,200 characters." },
@@ -42,8 +44,8 @@ export async function POST(request: Request) {
       signal: request.signal,
     });
     let animation = null;
-    let faceStatus = "not-configured";
-    if (faceServiceConfigured() && !request.signal.aborted) {
+    let faceStatus = animate ? "not-configured" : "disabled";
+    if (animate && faceServiceConfigured() && !request.signal.aborted) {
       try {
         animation = await generateFaceAnimation(speech.audio, request.signal);
         faceStatus = "ready";

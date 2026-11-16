@@ -1,7 +1,6 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  outputFileTracingIncludes: { "/api/voice/speak": ["./vendor/nvidia-a2f/*.proto"] },
   async headers() {
     return [
       { source: "/:path*", headers: [

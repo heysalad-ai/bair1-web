@@ -54,7 +54,14 @@ export function validateFaceAnimation(
   }
   if (animation.frames[0].time > 0.15 || previous < duration - 0.5)
     throw new Error("Incomplete face animation");
-  return animation;
+  return {
+    source: "nvidia-audio2face",
+    duration: animation.duration,
+    frames: animation.frames.map((frame) => ({
+      time: frame.time,
+      values: [...frame.values],
+    })),
+  };
 }
 export function sampleFace(animation: FaceAnimation, time: number): FacePose {
   if (!Number.isFinite(time) || time < 0 || time >= animation.duration)
