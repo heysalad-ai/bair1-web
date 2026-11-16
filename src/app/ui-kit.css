@@ -171,7 +171,7 @@
 .b1-tabs a:hover { color: var(--b1-ink); }
 
 /* ---------- Fleet ---------- */
-.b1-fleet-hero { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 1.5rem; align-items: center; }
+.b1-fleet-hero { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1.5rem; align-items: start; }
 .b1-fleet-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 17.5rem), 1fr)); gap: 1rem; list-style: none; margin: 0; padding: 0; }
 .b1-unit {
   position: relative; display: flex; flex-direction: column; gap: 1rem; height: 100%;
@@ -193,8 +193,7 @@
 /* ---------- Device detail ---------- */
 .b1-detail-hero { display: grid; grid-template-columns: minmax(0, 1fr) minmax(16rem, 22rem); gap: 1.5rem; align-items: start; }
 .b1-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 8rem), 1fr)); gap: 0.5rem; }
-.b1-bear-strip { display: flex; }
-.b1-bear-strip .b1-bubble { max-width: 46rem; }
+.b1-bear-strip { min-width: 0; }
 .b1-tile {
   position: relative; display: flex; flex-direction: column; align-items: flex-start; gap: 0.35rem; min-width: 0;
   padding: 0.7rem 0.85rem; border-radius: var(--b1-radius); text-align: left; cursor: pointer;
@@ -236,17 +235,19 @@
 .b1-state-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 1rem; }
 
 /* ---------- Bear companion ---------- */
-.b1-bear { display: flex; align-items: flex-end; gap: 0.75rem; min-width: 0; }
+.b1-bear { display: flex; align-items: flex-start; gap: 1rem; width: 100%; min-width: 0; }
 .b1-bear[data-layout="stack"] { flex-direction: column; align-items: stretch; }
 .b1-bear-figure { flex-shrink: 0; position: relative; }
 .b1-bear-figure svg { display: block; overflow: visible; }
 .b1-bubble {
-  position: relative; min-width: 0; padding: 0.75rem 0.95rem; border-radius: 1rem 1rem 1rem 0.3rem;
+  position: relative; flex: 1; min-width: 0; padding: 1rem 1.25rem; border-radius: 1rem 1rem 1rem 0.3rem;
   background: var(--b1-surface-2); border: 1px solid var(--b1-line-strong); font-size: 0.875rem; line-height: 1.5; color: var(--b1-ink);
 }
 .b1-bear[data-layout="stack"] .b1-bubble { border-radius: 1rem; }
 .b1-bubble-actions { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.65rem; }
-.b1-speech { margin-top: 0.65rem; padding: 0.65rem 0.8rem; border-radius: 0.75rem; background: var(--b1-bg); border: 1px dashed var(--b1-line-strong); font-size: 0.8125rem; line-height: 1.55; color: var(--b1-ink-2); }
+.b1-speech { margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--b1-line); max-height: 12rem; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: var(--b1-line-strong) transparent; overflow-wrap: anywhere; font-size: 0.875rem; line-height: 1.65; color: var(--b1-ink-2); }
+.b1-speech > p { max-width: 70ch; }
+.b1-speech:focus-visible { outline: 2px solid var(--b1-ink); outline-offset: 4px; }
 .b1-speech-label { display: block; font-size: 0.6875rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--b1-muted); margin-bottom: 0.3rem; }
 
 /* ---------- Showcase (development only) ---------- */
@@ -267,6 +268,9 @@
   .b1-seg button { flex: 1 1 auto; padding-inline: 0.4rem; font-size: 0.75rem; }
   .b1-chart-head > div:last-child { width: 100%; flex-wrap: nowrap; }
   .b1-seg[data-wrap] { flex-wrap: wrap; }
+  .b1-bear { gap: 0.5rem; }
+  .b1-bubble { padding: 0.75rem; }
+  .b1-bubble-actions { gap: 0.5rem; }
   .b1-fleet-hero .b1-bear-figure svg { width: 64px; height: 64px; }
   .b1-tiles { grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: 8.5rem; overflow-x: auto; scroll-snap-type: x proximity; scrollbar-width: none; margin-inline: -0.25rem; padding: 0.25rem; }
   .b1-tile { scroll-snap-align: start; }

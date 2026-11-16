@@ -188,7 +188,7 @@ export default function BearCompanion({
             )}
             <div id={panelId}>
               {spoken !== null && (
-                <div className="b1-speech">
+                <div className="b1-speech" role="region" aria-label="Requested summary" tabIndex={0}>
                   <span className="b1-speech-label">Requested summary</span>
                   <p>{spoken.text}</p>
                   {summary && spoken.source !== summary && (
