@@ -54,7 +54,7 @@ Bricolage Grotesque for display (`.b1-title`, `.b1-h2`, unit names), Figtree for
 
 Moods: `idle`, `greeting` (once per browser session), `loading`, `newData`, `attention`, `empty`, `speaking`. Moods and messages come only from `bear-state.ts`, which reads real UI state (fetch progress, data-status counts, access/fetch failures, new captures). The bear never claims to have analysed data and never comments on health or safety.
 
-**Read summary** is user-triggered browser speech synthesis — no paid voice or AI provider. The exact spoken text is shown; Stop, Mute (remembered per browser) and Hide are available; speech is cancelled when the text changes, the page is hidden, or the component unmounts. Unsupported browsers get the text without audio. Nothing autoplays.
+**Read summary** requests OpenAI speech only after a click. The server uses Cedar via `gpt-realtime-2.1-mini`, retains the existing authentication and daily voice budgets, and verifies the returned transcript against the displayed summary before returning WAV audio. The project key stays server-side. AI-generated voice is disclosed beside the controls. Preparing, Cancel, Stop, Mute (remembered per browser), Hide and error states are supported; playback is cancelled when the text changes, the page is hidden, or the component unmounts. Unsupported browsers get text. Nothing autoplays. See [voice architecture](bear-voice.md).
 
 ## Motion
 

@@ -41,6 +41,7 @@ export default function BearCompanion({
 }) {
   const reduce = useReducedMotion();
   const speech = useSpeech();
+  const { stop } = speech;
   const panelId = useId();
   const [greeting, setGreeting] = useState(false);
   const [spoken, setSpoken] = useState<string | null>(null);
@@ -57,14 +58,16 @@ export default function BearCompanion({
 
   // Readings moved on: stop reading out text that is no longer current.
   useEffect(() => {
-    if ("speechSynthesis" in window) window.speechSynthesis.cancel();
-  }, [summary]);
+    stop();
+  }, [summary, stop]);
 
   const shown: BearMood = speech.speaking
     ? "speaking"
-    : greeting && (mood === "idle" || mood === "loading")
-      ? "greeting"
-      : mood;
+    : speech.loading
+      ? "loading"
+      : greeting && (mood === "idle" || mood === "loading")
+        ? "greeting"
+        : mood;
 
   function readSummary() {
     if (!summary) return;
@@ -94,9 +97,9 @@ export default function BearCompanion({
         {summary && (
           <>
             <div className="b1-bubble-actions">
-              {speech.speaking ? (
+              {speech.speaking || speech.loading ? (
                 <Button size="sm" icon={Icon.stop} onClick={speech.stop}>
-                  Stop reading
+                  {speech.loading ? "Cancel voice" : "Stop reading"}
                 </Button>
               ) : (
                 <Button
@@ -106,7 +109,9 @@ export default function BearCompanion({
                   aria-expanded={spoken !== null}
                   aria-controls={panelId}
                 >
-                  {speech.supported && !speech.muted ? "Read summary" : "Show summary"}
+                  {speech.supported && !speech.muted
+                    ? "Read summary"
+                    : "Show summary"}
                 </Button>
               )}
               {speech.supported && (
@@ -120,29 +125,55 @@ export default function BearCompanion({
                   {speech.muted ? "Voice off" : "Mute voice"}
                 </Button>
               )}
-              {spoken !== null && !speech.speaking && (
-                <Button size="sm" variant="ghost" onClick={() => setSpoken(null)}>
+              {spoken !== null && !speech.speaking && !speech.loading && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => setSpoken(null)}
+                >
                   Hide
                 </Button>
               )}
             </div>
+            <p className="mt-2 text-xs text-[var(--b1-muted)]">
+              AI-generated voice · OpenAI
+            </p>
+            {speech.loading && (
+              <p role="status" className="mt-2 text-sm">
+                Preparing your voice summary…
+              </p>
+            )}
+            {speech.error && (
+              <p role="alert" className="mt-2 text-sm">
+                {speech.error}
+              </p>
+            )}
             <div id={panelId}>
               {spoken !== null && (
                 <div className="b1-speech">
                   <span className="b1-speech-label">
-                    {speech.supported && !speech.muted ? "Spoken text" : "Summary"}
+                    {speech.supported && !speech.muted
+                      ? "Spoken text"
+                      : "Summary"}
                   </span>
                   <p>{spoken}</p>
                   {spoken !== summary && (
                     <p className="mt-2 text-xs">
                       The summary has changed since this was read.{" "}
-                      <button type="button" className="b1-focus underline underline-offset-2" onClick={readSummary}>
+                      <button
+                        type="button"
+                        className="b1-focus underline underline-offset-2"
+                        onClick={readSummary}
+                      >
                         Use the latest
                       </button>
                     </p>
                   )}
                   {!speech.supported && (
-                    <p className="mt-2 text-xs">Speech isn’t available in this browser, so the summary is shown here instead.</p>
+                    <p className="mt-2 text-xs">
+                      Audio playback isn’t available in this browser, so the
+                      summary is shown here instead.
+                    </p>
                   )}
                 </div>
               )}
