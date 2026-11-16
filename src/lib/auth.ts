@@ -2,37 +2,17 @@ import { ConditionalCheckFailedException } from "@aws-sdk/client-dynamodb";
 import { createHash } from "node:crypto";
 import { getUser, upsertUser, type User, type Role } from "./users";
 
-const AUTH0_DOMAIN = process.env.NEXT_PUBLIC_AUTH0_DOMAIN!;
+import {
+  createIdentityVerifier,
+  IdentityProviderUnavailable,
+} from "./verified-identity";
+import { readIdentity, writeIdentity } from "./identity-cache";
 
-interface Auth0TokenPayload {
-  sub: string;
-  email?: string;
-  name?: string;
-  picture?: string;
-  emailVerified?: boolean;
-}
-
-export async function verifyAuth0Token(
-  token: string,
-): Promise<Auth0TokenPayload | null> {
-  try {
-    const res = await fetch(`https://${AUTH0_DOMAIN}/userinfo`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (!res.ok) return null;
-    const data = await res.json();
-    if (typeof data.sub !== "string" || !data.sub) return null;
-    return {
-      sub: data.sub,
-      emailVerified: data.email_verified === true,
-      email: data.email,
-      name: data.name ?? data.nickname,
-      picture: data.picture,
-    };
-  } catch {
-    return null;
-  }
-}
+export const verifyAuth0Token = createIdentityVerifier({
+  domain: process.env.NEXT_PUBLIC_AUTH0_DOMAIN ?? "",
+  read: readIdentity,
+  write: writeIdentity,
+});
 
 export async function getOrCreateUser(token: string): Promise<User | null> {
   const payload = await verifyAuth0Token(token);
@@ -75,7 +55,17 @@ export async function requireAuth(
   if (!token) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
-  const user = await getOrCreateUser(token);
+  let user: User | null;
+  try {
+    user = await getOrCreateUser(token);
+  } catch (error) {
+    if (error instanceof IdentityProviderUnavailable)
+      return Response.json(
+        { error: error.message },
+        { status: 503, headers: { "Retry-After": "60" } },
+      );
+    throw error;
+  }
   if (!user) {
     return Response.json({ error: "Invalid token" }, { status: 401 });
   }

@@ -1,5 +1,6 @@
 import { getAllUsers, getUser, upsertUser } from "@/lib/users";
 import { verifyAuth0Token } from "@/lib/auth";
+import { IdentityProviderUnavailable } from "@/lib/verified-identity";
 
 // Bootstrap the first super_admin. Only works if no super_admin exists yet.
 export async function POST(request: Request) {
@@ -26,7 +27,17 @@ export async function POST(request: Request) {
   }
 
   const token = auth.slice(7);
-  const payload = await verifyAuth0Token(token);
+  let payload;
+  try {
+    payload = await verifyAuth0Token(token);
+  } catch (error) {
+    if (error instanceof IdentityProviderUnavailable)
+      return Response.json(
+        { error: error.message },
+        { status: 503, headers: { "Retry-After": "60" } },
+      );
+    throw error;
+  }
   if (!payload || payload.sub !== approvedSubject) {
     return Response.json({ error: "Invalid token" }, { status: 401 });
   }
