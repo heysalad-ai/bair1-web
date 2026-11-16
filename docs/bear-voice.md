@@ -19,11 +19,9 @@ Checked 16 November 2026: OpenAI directs new speech integrations to Realtime; th
 - [Realtime WebSockets](https://developers.openai.com/api/docs/guides/voice-websockets?voice-api=realtime)
 - [GPT-Realtime-2.1 mini](https://developers.openai.com/api/docs/models/gpt-realtime-2.1-mini)
 
-## NVIDIA follow-up
+## NVIDIA facial animation
 
-[Audio2Face-3D](https://github.com/NVIDIA/Audio2Face-3D) generates facial animation from audio for a compatible rig. The existing SVG bear would need an animation mapping or a rigged replacement before using that output. The old hosted [NIM endpoint](https://build.nvidia.com/nvidia/audio2face-3d) is deprecated, so it is not an integration target.
-
-[Audio2Face-2D](https://docs.nvidia.com/nim/maxine/audio2face-2d/latest/overview.html) produces talking portraits; suitability for this illustrated bear is unverified. No NVIDIA service, GPU, credentials or avatar pipeline is introduced by this change. The existing bear speaking animation remains.
+The companion now optionally passes the verified speech audio to the owned Modal deployment of NVIDIA's published Audio2Face Mark model. Its geometry is retargeted onto the existing SVG bear and synchronized to the audio playback clock. Reduced motion skips this stage. The old hosted NVIDIA demo is not used; production runs the official ONNX model on scale-to-zero CPU workers. See [the NVIDIA architecture and acceptance evidence](nvidia-face.md).
 
 ## Verification
 

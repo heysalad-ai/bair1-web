@@ -1,48 +1,43 @@
-# NVIDIA facial animation integration
+# NVIDIA facial animation on Modal
 
-Status: prepared and software-tested; not active in production. No Audio2Face endpoint or NVIDIA key was found in the production configuration. Do not label this release NVIDIA-powered until real inference and browser playback have passed.
+The authenticated voice route generates verified OpenAI Cedar audio, then calls the owned Modal deployment of NVIDIA's published Audio2Face Mark v2.3 ONNX model. The model emits geometry coefficients; a bounded least-squares retarget uses NVIDIA's matching PCA basis and named blendshape deltas to produce seven mouth/eye controls for the existing SVG bear. This is a stylized 2D retarget, not a 3D mesh or NVIDIA-rendered video.
 
-## Data path
+## Data and playback
 
-After an authenticated Read summary request passes the existing voice budget, OpenAI generates the verified Cedar WAV. If a trusted Audio2Face service is configured, the server sends that exact PCM16 mono 24 kHz audio through NVIDIA's `A2FControllerService.ProcessAudioStream` gRPC method. It sends the audio header, bounded one-second chunks and EndOfAudio marker, then consumes named ARKit frames and successful completion.
+Only the requested PCM16 mono 24 kHz voice audio reaches Modal. Device summaries use “Selected unit” instead of an identifying label. No device IDs, coordinates, account identifiers, database credentials, OpenAI key or Modal administrative token are forwarded to the model. There is no application-level audio/frame persistence or cross-customer cache.
 
-Only seven named mouth/eye channels reach the browser. They are validated, bounded to 3,200 frames, and interpolated against `audio.currentTime`. The SVG bear maps jaw opening, lip pucker, smile and blinking onto its existing artwork. This is a stylized 2D retarget, not a 3D mesh or NVIDIA-rendered video. Reduced motion suppresses facial movement. Stop, cancellation, hidden pages and unmounting cancel playback and pending animation callbacks.
+Returned frames must be finite, bounded, complete and monotonic, with at most 3,200 frames and a 1 MB HTTP response. Only the seven canonical channels reach the browser. Playback interpolates against `audio.currentTime`, preserving pauses and avoiding wall-clock drift. Digitally silent input windows rest the lips; voiced motion comes from NVIDIA inference and geometry, not amplitude-derived animation.
 
-No device identifiers, coordinates, identity metadata or provider credentials are sent with the NVIDIA request. The input is the selected voice audio. The browser never receives the service key or endpoint. A missing, failed or malformed face response leaves verified Cedar audio available; it does not produce a false NVIDIA-active state. Additional inference has a 12-second deadline; the combined route is bounded to 60 seconds. Existing daily voice budgets cover both stages.
+Stop, hidden pages, component cleanup and superseded requests cancel browser animation callbacks. Reduced motion skips the external face request and suppresses facial movement. A missing, failed or malformed face response leaves verified Cedar speech and text available. The UI labels NVIDIA motion only when validated animation is actually playing.
 
-## Required production service
+The existing authenticated daily voice budgets cover the request: 10 attempts per user and 100 globally. Speech has a 35-second generation bound; Modal delivery has a 45-second bound; the combined route has a 90-second cap. A cancelled HTTP request can leave an already-running remote inference finishing under its own 40-second limit; the browser generation guard prevents it from playing later.
 
-Use an owned Audio2Face NIM service or a supported hosted endpoint offering the pinned NVIDIA protocol in `vendor/nvidia-a2f`. The former demo at build.nvidia.com/nvidia/audio2face-3d is deprecated. The official SDK lists Linux/Windows and a compatible NVIDIA GPU; neither this Mac nor the Vercel application is that inference host.
+## Deployment and access
 
-The service needs TLS and a gateway that actually validates the bearer credential. A standalone NIM port must not be exposed publicly: merely attaching an authorization header does not make an unauthenticated NIM secure. Keep the model container internal behind the authenticated gateway, and verify unauthorized calls are rejected before configuring Bair1.
+Modal app: `bair1-nvidia-face`, separate from existing Sally/HeySalad deployments. NVIDIA weights and geometry assets are fetched from immutable revision `5451728e07378df93b04523279e134a9993ae71b` of `nvidia/Audio2Face-3D-v2.3-Mark` while building the image. The image build verifies known-pose recovery before publishing. The running model uses CPU inference, one container maximum, no minimum warm containers, and a 30-second scale-down window. No GPU reservation, NGC account or always-on Mac is required.
 
-Server-only configuration, supplied through the deployment provider's secret manager:
+The public HTTP function is a small CPU gateway. It validates its own bearer secret and bounded WAV before invoking the private model function. Modal's CLI can describe this URL as “unauthenticated” because Modal proxy tokens are not used; our gateway authentication still rejects unsigned requests with HTTP 401. No model work runs before that check.
 
-- `BAIR1_A2F_TARGET`: trusted gRPC DNS hostname and port (no URL scheme).
-- `BAIR1_A2F_API_KEY`: the gateway/service bearer credential.
-- `BAIR1_A2F_FUNCTION_ID`: only when the selected hosted service requires it.
+The existing Modal profile is used only for administration/deployment. A separate, narrowly used service credential is stored in the Modal Secret `bair1-nvidia-face-auth` and as a sensitive Vercel production variable:
 
-Do not enter credentials in this document or commit them. Review the NVIDIA model/container terms for the chosen deployment. Choose a GPU host, region, shutdown policy and spending limit before provisioning new paid infrastructure. NVIDIA's official deployment examples and support matrix, rather than an untested compose recipe, define the model-specific GPU/runtime setup.
+- `BAIR1_A2F_HTTP_URL`: the deployment's HTTPS `*.modal.run` endpoint, server-only.
+- `BAIR1_A2F_API_KEY`: the service bearer credential, server-only and sensitive.
 
-## Acceptance before activation
+The HTTP client rejects credentials in URLs, non-HTTPS or non-Modal hosts, redirects and oversized output. It never follows a redirect with the service secret. Disabling the endpoint variable disables the optional stage. Provider failure also preserves speech automatically.
 
-1. Run one generic Cedar WAV through the real NVIDIA endpoint, recording service/model version, duration and frame count without credentials or customer data.
-2. Check complete monotonic frames, mapped jaw/eye channels, mouth pauses during silence, no changed voice and no drift through the entire clip. Check response payload and end-to-end latency against the route limits.
-3. Check authenticated and unauthorized gateway requests, cancellation, timeouts and provider failure while Cedar/text remain usable.
-4. In the actual dashboard, check Read summary, Stop, hidden tab, device change, reduced motion and mobile/desktop rendering. Synthetic fixture output cannot satisfy real inference acceptance.
-5. Configure production secrets, deploy the tested revision, repeat the hosted check and record deployment SHA. Remove both A2F configuration values to disable the optional stage if needed.
+## Verification
 
-## Apple Silicon investigation
+- Real model inference on Modal: 254 frames for the generic 8.45-second Cedar clip, 5.613 seconds in the direct model check. Results matched the local ONNX reference within 0.000001 in every returned control.
+- Real protected HTTP path: unsigned request 401, invalid authenticated WAV 400, valid sample 200 with 254 frames. The cold HTTP check took 19.042 seconds, including 8.894 seconds of inference; first-use latency is material and may vary.
+- Offline numerical/audio/authentication tests do not require Modal credentials, model downloads or paid inference. Node tests cover media-clock interpolation, cancellation, malformed output, voice fallback, reduced motion and rendered SVG controls.
+- Actual browser interaction and responsive playback still require a working browser connection. Offline component renders are preview evidence, not a live dashboard capture.
 
-The community Speech Swift port runs NVIDIA's v2.3 model through MLX, but returns identity-specific geometry coefficient vectors (Mark: 301), not NIM's named ARKit controls. Its own documentation requires a matching rig or retarget projection. It is not a drop-in replacement for this adapter; raw coefficients must never be guessed into named channels. The pinned probe in `tools/a2f-mlx-probe` ran successfully on the local Apple Silicon Mac: the 8.45-second Cedar sample produced 254 frames of 301 finite coefficients in 3.98 seconds after loading. This is real model inference, not an ARKit retarget or a hosted production service. No uptime claim is made.
+The earlier Apple Silicon MLX probe remains in `tools/a2f-mlx-probe` as research/reference evidence. Production uses the official ONNX weights directly on Modal, without that community runtime or identity-index guessing.
 
 ## Sources
 
-- [NVIDIA SDK and system requirements](https://github.com/NVIDIA/Audio2Face-3D-SDK)
-- [NVIDIA official sample protocols and deployment resources](https://github.com/NVIDIA/Audio2Face-3D-Samples)
-- [Deprecated hosted endpoint](https://build.nvidia.com/nvidia/audio2face-3d)
-- [Community MLX port and coefficient/rig limitations](https://github.com/soniqo/speech-swift/blob/main/docs/models/audio2face3d.md)
-
-## Software verification
-
-`tests/face-animation.mjs` performs a real local gRPC/protobuf round trip with a synthetic service, checks PCM metadata/chunk transport, status/error handling, malformed frames, media-clock interpolation, stale callback cancellation and voice fallback. This tests protocol integration; it does not run NVIDIA inference. Existing speech, authorization and firmware suites remain required.
+- [Official NVIDIA Mark model and license](https://huggingface.co/nvidia/Audio2Face-3D-v2.3-Mark)
+- [Official NVIDIA model/geometry outputs](https://github.com/NVIDIA/Audio2Face-3D-SDK/blob/main/docs/README.md)
+- [Modal web functions](https://modal.com/docs/guide/webhooks)
+- [Modal autoscaling](https://modal.com/docs/guide/scale)
+- [Modal deployment operations](../tools/a2f-modal/README.md)

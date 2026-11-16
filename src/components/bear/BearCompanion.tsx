@@ -40,7 +40,7 @@ export default function BearCompanion({
   greet?: boolean;
 }) {
   const reduce = useReducedMotion();
-  const speech = useSpeech();
+  const speech = useSpeech(!reduce);
   const { stop } = speech;
   const panelId = useId();
   const [greeting, setGreeting] = useState(false);
@@ -138,6 +138,14 @@ export default function BearCompanion({
             <p className="mt-2 text-xs text-[var(--b1-muted)]">
               AI-generated voice · OpenAI
             </p>
+            {speech.speaking &&
+              speech.face &&
+              !reduce &&
+              speech.faceStatus === "ready" && (
+                <p className="mt-2 text-xs text-[var(--b1-muted)]">
+                  Facial motion · NVIDIA
+                </p>
+              )}
             {speech.speaking && speech.faceStatus === "unavailable" && (
               <p className="mt-2 text-xs text-[var(--b1-muted)]">
                 Face animation is unavailable. Your voice summary is still

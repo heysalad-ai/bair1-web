@@ -206,21 +206,33 @@ export default function BearFigure({
           }
         >
           <path d={MUZZLE} fill={TAN} stroke={LINE} strokeWidth={SW} />
-          <path
-            d={MOUTH}
-            fill="none"
-            stroke={LINE}
-            strokeWidth={SW}
-            strokeLinecap="round"
-          />
-          {pose && (
-            <ellipse
-              cx="715"
-              cy={441 - pose.smile * 5}
-              rx={24 - pose.pucker * 10}
-              ry={pose.jaw * 22}
-              fill={LINE}
-              transform="rotate(-14 715 441)"
+          {pose ? (
+            <g
+              transform={`translate(715 ${-pose.smile * 6}) scale(${1 - pose.pucker * 0.35} 1) translate(-715 0)`}
+            >
+              <path
+                data-face-mouth="nvidia"
+                d={`M676,440 C700,462 752,455 768,400 C752,${455 + pose.jaw * 180} 700,${462 + pose.jaw * 180} 676,440 Z`}
+                fill={LINE}
+                stroke={LINE}
+                strokeWidth={SW / 2}
+                strokeLinejoin="round"
+              />
+              <path
+                d="M768,400 C776,360 772,310 762,290"
+                fill="none"
+                stroke={LINE}
+                strokeWidth={SW}
+                strokeLinecap="round"
+              />
+            </g>
+          ) : (
+            <path
+              d={MOUTH}
+              fill="none"
+              stroke={LINE}
+              strokeWidth={SW}
+              strokeLinecap="round"
             />
           )}
         </motion.g>
@@ -254,7 +266,7 @@ export default function BearFigure({
             style={{ transformOrigin: "505px 386px", transformBox: "view-box" }}
             animate={
               pose
-                ? { scaleY: Math.max(0.08, 1 - pose.blink) }
+                ? { scaleY: 1 }
                 : animate
                   ? { scaleY: [1, 1, 0.08, 1] }
                   : undefined
@@ -272,8 +284,19 @@ export default function BearFigure({
                   : undefined
             }
           >
-            <ellipse cx="505" cy="386" rx="23" ry="28" fill={LINE} />
-            <circle cx="513" cy="375" r="7.5" fill="#fff" />
+            <ellipse
+              cx="505"
+              cy="386"
+              rx="23"
+              ry={pose ? Math.max(2, 28 * (1 - pose.blink)) : 28}
+              fill={LINE}
+            />
+            <circle
+              cx="513"
+              cy={pose ? 386 - 11 * (1 - pose.blink) : 375}
+              r={pose ? 7.5 * (1 - pose.blink) : 7.5}
+              fill="#fff"
+            />
           </motion.g>
         ) : (
           <path

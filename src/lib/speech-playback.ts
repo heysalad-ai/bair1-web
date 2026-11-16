@@ -21,6 +21,7 @@ export class SpeechPlayback {
     private request: typeof fetch,
     private onState: (state: SpeechState) => void,
     private makeAudio = (url: string) => new Audio(url),
+    private animate = true,
   ) {}
   stop() {
     this.version++;
@@ -46,7 +47,7 @@ export class SpeechPlayback {
       const response = await this.request("/api/voice/speak", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text }),
+        body: JSON.stringify({ text, animate: this.animate }),
         signal: controller.signal,
       });
       const result = await response.json();
@@ -61,16 +62,18 @@ export class SpeechPlayback {
       )
         throw new Error("Voice could not be loaded. Please try again.");
       let animation: FaceAnimation | null = null;
-      if (result.animation) {
+      let faceStatus = this.animate ? result.faceStatus : "disabled";
+      if (this.animate && result.animation) {
         try {
           animation = validateFaceAnimation(
             result.animation,
             result.animation.duration,
           );
         } catch {
-          /* Keep verified voice if animation is malformed. */
+          faceStatus = "unavailable";
         }
       }
+      if (faceStatus === "ready" && !animation) faceStatus = "unavailable";
       const audio = this.makeAudio(result.audio);
       this.audio = audio;
       const finish = () => {
@@ -101,7 +104,7 @@ export class SpeechPlayback {
           face: animation
             ? sampleFace(animation, audio.currentTime)
             : undefined,
-          faceStatus: animation ? "ready" : result.faceStatus,
+          faceStatus: animation ? "ready" : faceStatus,
         });
         if (animation) this.animationFrame = requestAnimationFrame(tick);
       };
