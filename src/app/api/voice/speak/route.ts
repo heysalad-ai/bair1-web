@@ -3,12 +3,18 @@ import { readJsonObject } from "@/lib/request-limits";
 import { usageGate } from "@/lib/usage-budget";
 import { generateBearSpeech, MAX_SPEECH_CHARACTERS } from "@/lib/openai-speech";
 
+import {
+  faceServiceConfigured,
+  generateFaceAnimation,
+} from "@/lib/nvidia-face";
+
 export const runtime = "nodejs";
-export const maxDuration = 45;
+export const maxDuration = 90;
 export async function POST(request: Request) {
   const auth = await requireAuth(request);
   if (auth instanceof Response) return auth;
   let text: string;
+  let animate = true;
   try {
     const body = await readJsonObject(request, 8192);
     if (
@@ -18,6 +24,7 @@ export async function POST(request: Request) {
     )
       throw new RangeError();
     text = body.text.trim();
+    animate = body.animate !== false;
   } catch {
     return Response.json(
       { error: "Choose a summary of up to 1,200 characters." },
@@ -36,8 +43,20 @@ export async function POST(request: Request) {
       subject: auth.user.userId,
       signal: request.signal,
     });
+    let animation = null;
+    let faceStatus = animate ? "not-configured" : "disabled";
+    if (animate && faceServiceConfigured() && !request.signal.aborted) {
+      try {
+        animation = await generateFaceAnimation(speech.audio, request.signal);
+        faceStatus = "ready";
+      } catch {
+        faceStatus = "unavailable";
+      }
+    }
     return Response.json(
       {
+        animation,
+        faceStatus,
         audio: `data:audio/wav;base64,${speech.audio.toString("base64")}`,
         text: speech.transcript,
       },

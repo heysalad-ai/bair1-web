@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuthenticatedFetch } from "./use-authenticated-fetch";
 import { SpeechPlayback, type SpeechState } from "./speech-playback";
 const MUTE_KEY = "b1-bear-voice-muted";
-export function useSpeech() {
+export function useSpeech(animate = true) {
   const request = useAuthenticatedFetch();
   const [supported, setSupported] = useState(false);
   const [muted, setMutedState] = useState(false);
@@ -16,11 +16,17 @@ export function useSpeech() {
   const playback = useRef<SpeechPlayback | null>(null);
   useEffect(() => {
     let active = true;
-    const player = new SpeechPlayback(request, (next) => {
-      if (active) setState(next);
-    });
+    const player = new SpeechPlayback(
+      request,
+      (next) => {
+        if (active) setState(next);
+      },
+      undefined,
+      animate,
+    );
     playback.current = player;
     const ready = setTimeout(() => {
+      setState({ loading: false, speaking: false, error: "" });
       setSupported(typeof Audio !== "undefined");
       try {
         setMutedState(window.localStorage.getItem(MUTE_KEY) === "1");
@@ -39,7 +45,7 @@ export function useSpeech() {
       player.stop();
       playback.current = null;
     };
-  }, [request]);
+  }, [request, animate]);
   const stop = useCallback(() => playback.current?.stop(), []);
   const speak = useCallback(
     (text: string) => {

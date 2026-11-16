@@ -53,3 +53,7 @@ output/
 /.impeccable/review/
 /dynamodb-local-metadata.json
 __pycache__/
+
+# Research-only native probe artifacts
+tools/a2f-mlx-probe/.build/
+tools/a2f-mlx-probe/Package.resolved

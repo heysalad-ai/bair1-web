@@ -78,3 +78,8 @@ export function deviceSpokenSummary({
   parts.push("A stored reading does not confirm the unit is connected right now.");
   return parts.join(" ");
 }
+
+/** The visible and spoken copy is immutable while live readings keep updating. */
+export function spokenSnapshot(summary: string) {
+  return { source: summary, text: `This summary describes the readings shown when you requested it. ${summary}` };
+}

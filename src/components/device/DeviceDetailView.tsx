@@ -162,7 +162,7 @@ export default function DeviceDetailView({
   return (
     <div className="b1-page">
       <div className="b1-bear-strip">
-        <BearCompanion mood={bear.mood} message={bear.message} summary={summary} size={64} />
+        <BearCompanion mood={bear.mood} message={bear.message} summary={summary} size={64} contextKey={JSON.stringify([device.deviceId, field, windowHours])} />
       </div>
 
       {/* Latest readings select the graph's measurement; graph follows immediately. */}

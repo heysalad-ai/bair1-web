@@ -4,6 +4,7 @@ import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { useEffect, useId, useState } from "react";
 import type { BearMood } from "@/lib/bear-state";
 import { useSpeech } from "@/lib/use-speech";
+import { spokenSnapshot } from "@/lib/spoken-summary";
 import { Button, Icon } from "@/components/ui/kit";
 import BearFigure from "./BearFigure";
 
@@ -28,6 +29,7 @@ export default function BearCompanion({
   mood,
   message,
   summary,
+  contextKey,
   size = 88,
   layout = "row",
   greet = false,
@@ -35,16 +37,21 @@ export default function BearCompanion({
   mood: BearMood;
   message: string;
   summary?: string;
+  /** Internal selection identity; never sent to the speech provider. */
+  contextKey?: string;
   size?: number;
   layout?: "row" | "stack";
   greet?: boolean;
 }) {
   const reduce = useReducedMotion();
-  const speech = useSpeech();
+  const speech = useSpeech(!reduce);
   const { stop } = speech;
   const panelId = useId();
   const [greeting, setGreeting] = useState(false);
-  const [spoken, setSpoken] = useState<string | null>(null);
+  const [spoken, setSpoken] = useState<ReturnType<
+    typeof spokenSnapshot
+  > | null>(null);
+  const speechContext = contextKey ?? summary;
 
   useEffect(() => {
     if (!greet) return;
@@ -56,10 +63,12 @@ export default function BearCompanion({
     };
   }, [greet]);
 
-  // Readings moved on: stop reading out text that is no longer current.
+  // A requested snapshot survives live refreshes; changing selection cancels it.
   useEffect(() => {
     stop();
-  }, [summary, stop]);
+    const clear = setTimeout(() => setSpoken(null), 0);
+    return () => clearTimeout(clear);
+  }, [speechContext, stop]);
 
   const shown: BearMood = speech.speaking
     ? "speaking"
@@ -71,14 +80,15 @@ export default function BearCompanion({
 
   function readSummary() {
     if (!summary) return;
-    setSpoken(summary);
-    speech.speak(summary);
+    const snapshot = spokenSnapshot(summary);
+    setSpoken(snapshot);
+    speech.speak(snapshot.text);
   }
 
   return (
     <div className="b1-bear" data-layout={layout}>
       <div className="b1-bear-figure">
-        <BearFigure mood={shown} size={size} />
+        <BearFigure mood={shown} size={size} face={speech.face} />
       </div>
       <div className="b1-bubble">
         <AnimatePresence mode="wait" initial={false}>
@@ -94,7 +104,7 @@ export default function BearCompanion({
             {message}
           </motion.p>
         </AnimatePresence>
-        {summary && (
+        {(summary || spoken) && (
           <>
             <div className="b1-bubble-actions">
               {speech.speaking || speech.loading ? (
@@ -105,13 +115,19 @@ export default function BearCompanion({
                 <Button
                   size="sm"
                   icon={Icon.speaker}
-                  onClick={readSummary}
+                  disabled={!summary && !speech.ready}
+                  onClick={() => {
+                    if (speech.ready && spoken) speech.speak(spoken.text);
+                    else readSummary();
+                  }}
                   aria-expanded={spoken !== null}
                   aria-controls={panelId}
                 >
-                  {speech.supported && !speech.muted
-                    ? "Read summary"
-                    : "Show summary"}
+                  {speech.ready
+                    ? "Play summary"
+                    : speech.supported && !speech.muted
+                      ? "Read summary"
+                      : "Show summary"}
                 </Button>
               )}
               {speech.supported && (
@@ -129,7 +145,10 @@ export default function BearCompanion({
                 <Button
                   size="sm"
                   variant="ghost"
-                  onClick={() => setSpoken(null)}
+                  onClick={() => {
+                    stop();
+                    setSpoken(null);
+                  }}
                 >
                   Hide
                 </Button>
@@ -138,6 +157,25 @@ export default function BearCompanion({
             <p className="mt-2 text-xs text-[var(--b1-muted)]">
               AI-generated voice · OpenAI
             </p>
+            {speech.speaking &&
+              speech.face &&
+              !reduce &&
+              speech.faceStatus === "ready" && (
+                <p className="mt-2 text-xs text-[var(--b1-muted)]">
+                  Facial motion · NVIDIA
+                </p>
+              )}
+            {speech.speaking && speech.faceStatus === "unavailable" && (
+              <p className="mt-2 text-xs text-[var(--b1-muted)]">
+                Face animation is unavailable. Your voice summary is still
+                playing.
+              </p>
+            )}
+            {speech.ready && (
+              <p role="status" className="mt-2 text-sm">
+                Your voice summary is ready. Press Play summary to listen.
+              </p>
+            )}
             {speech.loading && (
               <p role="status" className="mt-2 text-sm">
                 Preparing your voice summary…
@@ -151,15 +189,11 @@ export default function BearCompanion({
             <div id={panelId}>
               {spoken !== null && (
                 <div className="b1-speech">
-                  <span className="b1-speech-label">
-                    {speech.supported && !speech.muted
-                      ? "Spoken text"
-                      : "Summary"}
-                  </span>
-                  <p>{spoken}</p>
-                  {spoken !== summary && (
+                  <span className="b1-speech-label">Requested summary</span>
+                  <p>{spoken.text}</p>
+                  {summary && spoken.source !== summary && (
                     <p className="mt-2 text-xs">
-                      The summary has changed since this was read.{" "}
+                      The on-screen summary has changed.{" "}
                       <button
                         type="button"
                         className="b1-focus underline underline-offset-2"
