@@ -194,10 +194,12 @@ await probe('Public latest only queries explicitly published devices', '', async
   assert.equal(res.status, 200); assert.equal((await res.json()).deviceId, deviceA.deviceId);
 });
 test('New personal users do not inherit history or roles through either verified or unverified email', async (t) => {
-  const originalFetch = globalThis.fetch; t.after(() => { globalThis.fetch = originalFetch; });
+  const originalFetch = globalThis.fetch, originalDomain = process.env.NEXT_PUBLIC_AUTH0_DOMAIN;
+  process.env.NEXT_PUBLIC_AUTH0_DOMAIN = 'synthetic.invalid';
+  t.after(() => { globalThis.fetch = originalFetch; if (originalDomain === undefined) delete process.env.NEXT_PUBLIC_AUTH0_DOMAIN; else process.env.NEXT_PUBLIC_AUTH0_DOMAIN = originalDomain; });
   const sub = randomUUID(); let saved; let emailLookups = 0;
   globalThis.fetch = async () => Response.json({ sub, email: 'fixture@example.invalid', email_verified: false });
-  const realAuth = createLoader({ './users': {
+  const realAuth = createLoader({ './identity-cache': { readIdentity: async () => null, writeIdentity: async () => {} }, './users': {
     getUser: async () => null, getUserByEmail: async () => { emailLookups++; return null; },
     upsertUser: async user => { saved = user; },
   } })('src/lib/auth.ts');
