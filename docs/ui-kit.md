@@ -47,7 +47,7 @@ Bricolage Grotesque for display (`.b1-title`, `.b1-h2`, unit names), Figtree for
 - **Segmented** — single choice as an ARIA radio group with roving tab index and arrow keys. Used for time windows.
 - **Metric tiles** — also a radio group: selecting a tile changes the graph *and* its summary together. Each tile shows the latest value, its capture age, and a sparkline drawn from history that is already loaded (no extra requests).
 - **Unit card** — whole card is one link; status, primary measurement, up to three secondary values, capture age. A "New reading" badge appears only when a later poll carries a strictly newer capture time.
-- **Chart** — Recharts area chart, UTC axis, unit label, dashed per-reading average, tooltip with recorded time + value + unit. Lines break at missing values and gaps > 5 min. A visually hidden caption and a "View plotted readings" table carry the same data for assistive technology.
+- **Chart** — Recharts area chart, UTC axis, unit label, dashed per-reading average, tooltip with recorded time + value + unit. Lines break at missing values and gaps > 5 min; stored readings retain visible dots at every sample count so isolated samples remain inspectable. A visually hidden caption and a "View plotted readings" table carry the same data for assistive technology.
 - **StateMessage** — one shape for empty, error, unavailable, access-denied and loading, with the bear in a matching mood.
 
 ## Bear companion
