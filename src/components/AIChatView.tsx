@@ -84,13 +84,19 @@ export default function AIChatView({ deviceId, lat, lng }: Props) {
         const audio = new Audio(data.audio);
         audioRef.current = audio;
         audio.onended = () => setIsVoicePlaying(false);
-        audio.onerror = () => {
+        const playbackFailed = () => {
+          audio.pause();
           setIsVoicePlaying(false);
           setBriefingText(
             `${data.text} Voice could not be played. Please try again.`,
           );
         };
-        await audio.play();
+        audio.onerror = playbackFailed;
+        try {
+          await audio.play();
+        } catch {
+          playbackFailed();
+        }
       } else {
         setIsVoicePlaying(false);
       }
