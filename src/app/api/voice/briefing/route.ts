@@ -6,8 +6,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { getLatestReading } from "@/lib/dynamo";
 import { getAirQuality, getWeather, getPollenForecast } from "@/lib/google-env";
 
-const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY || "";
-const VOICE_ID = "21m00Tcm4TlvDq8ikWAM"; // Rachel
+import { generateBearSpeech } from "@/lib/openai-speech";
+
+export const runtime = "nodejs";
+export const maxDuration = 45;
 
 export async function GET(req: NextRequest) {
   const auth = await requireAuth(req);
@@ -102,45 +104,22 @@ export async function GET(req: NextRequest) {
 
   const text = parts.join(" ");
 
-  // If no ElevenLabs key, return text only
-  if (!ELEVENLABS_API_KEY) {
+  if (!process.env.OPENAI_API_KEY)
     return NextResponse.json({ text, audio: null });
-  }
-
-  // Generate TTS
   try {
-    const ttsRes = await fetch(
-      `https://api.elevenlabs.io/v1/text-to-speech/${VOICE_ID}`,
-      {
-        method: "POST",
-        signal: AbortSignal.timeout(15000),
-        headers: {
-          "Content-Type": "application/json",
-          "xi-api-key": ELEVENLABS_API_KEY,
-        },
-        body: JSON.stringify({
-          text,
-          model_id: "eleven_flash_v2_5",
-          voice_settings: {
-            stability: 0.5,
-            similarity_boost: 0.75,
-          },
-        }),
-      },
-    );
-
-    if (!ttsRes.ok) {
-      return NextResponse.json({ text, audio: null, error: "TTS failed" });
-    }
-
-    const audioBuffer = await ttsRes.arrayBuffer();
-    const base64 = Buffer.from(audioBuffer).toString("base64");
-
+    const speech = await generateBearSpeech(text, {
+      subject: auth.user.userId,
+      signal: req.signal,
+    });
     return NextResponse.json({
       text,
-      audio: `data:audio/mpeg;base64,${base64}`,
+      audio: `data:audio/wav;base64,${speech.audio.toString("base64")}`,
     });
   } catch {
-    return NextResponse.json({ text, audio: null });
+    return NextResponse.json({
+      text,
+      audio: null,
+      error: "Voice is unavailable. The briefing text is still available.",
+    });
   }
 }
