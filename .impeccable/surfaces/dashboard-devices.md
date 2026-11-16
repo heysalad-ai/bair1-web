@@ -1,25 +1,29 @@
 # Dashboard device overview
 
-Mode: Operate. Local extension of the existing Bear One dashboard; preserve its dark green palette, bear identity, Figtree/Bricolage typography and existing measurement/access behavior. The user wants all units and individual units visible without a device dropdown. The user confirmed live readings and device health as the priority.
+Mode: Operate. Extend the user-approved Bear One UI kit: dark green surfaces, bear identity, Figtree/Bricolage typography, lime selections and chart strokes. The user wants a visual fleet overview with directly accessible device graphs and an animated, helpful bear companion. Live readings and device health remain the primary information priority.
 
 ## Direction contract
 
-THESIS: Make the units themselves the navigation: scan a visible list, then open one unit. Replace the hidden selector without replacing the dashboard's identity.
+THESIS: See every accessible unit, recognise its stored-data status, then open its graph through an ordinary device link.
 
-OWN-WORLD: Existing dark green ground, quiet hairline row separators, readable green-tinted secondary text, accent reserved for focus and recent-data state. No decorative cards, dashboard-stat tiles or invented health scores.
+OWN-WORLD: Preserve the approved dark green ground, quiet surfaces, readable green-tinted secondary text, lime selections, rounded controls, and existing bear illustration. Status always combines shape, words and colour; it never claims an air-quality or safety assessment.
 
-STORY: See every accessible unit's name, workspace, latest available measurement and its capture age. Search by name/ID/workspace. Open a unit for measurements/history and return to the same search.
+FORM: A responsive grid of linked unit cards replaces the former airy list direction, as approved through the UI-kit review. Each card presents identity, workspace/access, primary measurement, compact secondary values and capture age. Detail pages use selectable measurement tiles above a prominent time graph. The animated bear provides contextual interface messages and optional user-triggered speech.
 
-FIRST VIEWPORT: Existing sidebar and account header, an All devices heading with modest count, one search/refresh toolbar, and an airy list whose aligned readings support comparison. Rows stack into two data columns on mobile. A visible View device link carries the action.
+STORY: Scan and search the fleet, filter the visible page by stored-data status, open a unit, select a measurement and time window, inspect a summary and recorded location, then return to the fleet. History pagination and CSV remain available separately.
 
-SIGNATURE: Overview-to-detail navigation with ordinary links and browser history; each unit has a shareable URL within the existing authenticated dashboard.
+FIRST VIEWPORT: Retained account/navigation shell, Your units heading and count, bear companion, search/refresh controls, status filters and the first linked units. Avoid a redundant brand eyebrow above the heading. On a device, preserve the title/access context and place measurements and graph before secondary technical details.
 
-BOUNDARIES: Preserve authorization and measurement-versus-receipt semantics. Missing data is explicit; freshness never asserts hardware connectivity. Read at most 24 visible units in small GraphQL batches per refresh, with cancellation and per-unit failures. Preserve zero values, unknown clocks and partial-loading states. No new auth, simulated production data or inferred factory pass/fail.
+SIGNATURE: The recognisable bear responds to real fetch, capture and access states. The graph and summary change together with the selected metric. Speech is opt-in, displays its exact text, can be stopped or muted, and never autoplays.
 
-Acceptance: no device dropdown; all accessible metadata searchable; 24-unit pagination; real capture-age labels; individual measurements/history links and browser back; refresh/error/empty/long-name states; keyboard and 390/1440px layouts; current unit access remains enforced by existing GraphQL resolvers.
+RESPONSIVE: Cards flow from a desktop grid to a mobile column. Measurement tiles scroll horizontally on narrow screens, time controls remain usable, and the navigation changes to the existing mobile bar. Keep keyboard controls, visible focus, accessible plotted readings and reduced-motion behaviour.
 
-Research: Carbon resource tables support search and progressive detail; ThingsBoard entities overview combines latest telemetry with per-device drill-down. Adapt to PRODUCT.md's consumer audience with a roomy list, rather than making a dense administrative table the default.
+BOUNDARIES: Preserve authorization and measurement-versus-receipt semantics. Missing data is explicit; freshness never asserts hardware connectivity. Read at most 24 visible units in small GraphQL batches per refresh, with cancellation and per-unit failures. Preserve zero values, unknown clocks and partial-loading states. No new auth, simulated production data, invented location or inferred factory pass/fail. Do not expand permissions or change ownership for this release.
 
 ## Integrated device monitoring
 
-The confirmed drill-down now puts the latest measurements, an automatically loaded time graph, a numeric window summary, and the recorded location on the primary device overview. Default to the latest 200 stored readings so inactive units remain inspectable; offer explicit rolling 24-hour, 7-day and 14-day windows. Label truncated pages and keep full pagination/CSV in History & export. Summaries describe loaded measurements only and never imply time-weighted averages, regulatory assessments or factory acceptance. Maps use reported or registered coordinates only and explicitly distinguish a stored position from a live GPS fix. Missing coordinates produce a clear empty state rather than a default city.
+The primary device overview contains latest measurements, automatically loaded time graph, numeric window summary, and recorded location. Default to the latest 200 stored readings so inactive units remain inspectable; offer rolling 24-hour, 7-day and 14-day windows. Label partial pages and keep full pagination/CSV in History & export. Summaries describe loaded measurements only and never imply time-weighted averages, regulatory assessments or factory acceptance. Maps use reported or registered coordinates only and distinguish stored position from a live GPS fix. Missing coordinates produce an empty state rather than a default city. Sparse samples remain visible as dots while gaps remain unconnected.
+
+Acceptance: no device dropdown; searchable accessible metadata; 24-unit pagination; truthful capture-age labels; ordinary unit URLs and browser back; automatic graphs and working metric/range controls; zero/missing/error/access states; optional speech; keyboard and desktop/mobile layouts; existing per-device access enforcement; development showcase excluded from production.
+
+Research: Carbon resource discovery and ThingsBoard progressive device detail informed the original navigation. The user-approved Bear One kit now supplies the card-grid and graph-led visual authority. Preserve the consumer audience and concise language rather than turning it into a dense administrative table.

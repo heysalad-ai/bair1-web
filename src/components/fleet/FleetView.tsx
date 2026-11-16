@@ -114,8 +114,7 @@ export default function FleetView({
     <section className="b1-page" aria-labelledby="fleet-heading">
       <div className="b1-fleet-hero">
         <div className="min-w-0">
-          <p className="b1-eyebrow">Bear One</p>
-          <h1 id="fleet-heading" className="b1-title mt-2">
+          <h1 id="fleet-heading" className="b1-title">
             Your units
           </h1>
           <p className="b1-sub mt-2">
