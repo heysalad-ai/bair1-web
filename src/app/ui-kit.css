@@ -179,7 +179,6 @@
   background: var(--b1-surface); border: 1px solid var(--b1-line); color: inherit;
   transition: border-color var(--b1-dur-fast) ease-out, background-color var(--b1-dur-fast) ease-out, transform var(--b1-dur) var(--b1-ease-out);
 }
-.b1-unit::before { content: ""; position: absolute; left: 0; top: 1.1rem; bottom: 1.1rem; width: 3px; border-radius: 0 3px 3px 0; background: var(--tone, transparent); opacity: 0.9; }
 .b1-unit:active { transform: scale(0.99); }
 @media (hover: hover) and (pointer: fine) { .b1-unit:hover { border-color: var(--b1-line-strong); background: var(--b1-surface-2); } }
 .b1-unit-name { font-family: var(--font-display); font-weight: 700; font-size: 1.0625rem; line-height: 1.25; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }

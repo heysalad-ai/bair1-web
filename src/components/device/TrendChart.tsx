@@ -58,7 +58,9 @@ export default function TrendChart({
   const numeric = series.filter((p) => p.value !== null);
   const span = series.length > 1 ? series[series.length - 1].time - series[0].time : 0;
   const minValue = numeric.length ? Math.min(...numeric.map((p) => p.value as number)) : 0;
-  const showDots = numeric.length <= 80;
+  // Isolated samples must remain visible even when every neighbouring point
+  // is separated by a missing value or a gap in collection.
+  const dotRadius = numeric.length <= 80 ? 2.5 : 1.75;
 
   return (
     <ResponsiveContainer width="100%" height={height}>
@@ -144,7 +146,7 @@ export default function TrendChart({
           strokeWidth={2.25}
           fill={`url(#${gradient})`}
           connectNulls={false}
-          dot={showDots ? { r: 2.5, fill: "var(--b1-primary)", strokeWidth: 0 } : false}
+          dot={{ r: dotRadius, fill: "var(--b1-primary)", strokeWidth: 0 }}
           activeDot={{ r: 5, stroke: "var(--b1-bg)", strokeWidth: 2, fill: "var(--b1-primary)" }}
           isAnimationActive={!reduce}
           animationDuration={450}
