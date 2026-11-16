@@ -2,7 +2,7 @@
 
 The companion reads the existing displayed summary through an authenticated, output-only OpenAI Realtime session. Default voice: Cedar, warm and calm British English. There is no microphone capture, autoplay or browser speech-synthesis fallback.
 
-`POST /api/voice/speak` accepts at most 1,200 characters and 8 KiB of JSON. Authentication runs first, followed by the existing shared daily voice budget (10 attempts per user, 100 globally). Only the requested text and a hashed safety identifier reach OpenAI; the provider key remains server-side. Provider errors are sanitized. Audio is private/no-store and bounded to 2.5 MB PCM before base64 encoding.
+`POST /api/voice/speak` accepts at most 1,200 characters and 8 KiB of JSON. Authentication runs first, followed by the existing shared daily voice budget (10 attempts per user, 100 globally). Device summaries use “Selected unit” instead of the identifying device label. Only the requested summary text and a hashed safety identifier reach OpenAI; the provider key remains server-side. Provider errors are sanitized. Audio is private/no-store and bounded to 2.5 MB PCM before base64 encoding.
 
 Generation must finish within 35 seconds, return PCM16 mono at 24 kHz, and include a matching transcript. Comparison tolerates capitalization and punctuation, and treats spoken “minus” before digits as a negative sign, but separately checks numeric signs, decimal values and unit marks. It deliberately rejects paraphrases, including spelled-out replacements for digits. Failure leaves the original summary readable. Transcript verification is a provider-reported consistency check, not independent speech recognition or a guarantee about pronunciation.
 

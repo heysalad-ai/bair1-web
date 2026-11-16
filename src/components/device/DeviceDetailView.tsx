@@ -117,7 +117,8 @@ export default function DeviceDetailView({
   const summary =
     snapshot && metric
       ? deviceSpokenSummary({
-          name: device.name,
+          // Keep identifying labels out of the external voice request.
+          name: "Selected unit",
           metric,
           latest: latestForMetric?.value,
           age: latestForMetric?.capturedAt ? observationLabel(latestForMetric.capturedAt, now) : undefined,
