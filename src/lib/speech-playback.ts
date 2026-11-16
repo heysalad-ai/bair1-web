@@ -10,10 +10,13 @@ export type SpeechState = {
   error: string;
   face?: FacePose;
   faceStatus?: string;
+  ready?: boolean;
 };
 /** Abort and generation guards keep cancelled or superseded audio silent. */
 export class SpeechPlayback {
   private version = 0;
+  private preparedText = "";
+  private resumePlayback: (() => Promise<void>) | null = null;
   private animationFrame: number | null = null;
   private pending: AbortController | null = null;
   private audio: HTMLAudioElement | null = null;
@@ -25,6 +28,8 @@ export class SpeechPlayback {
   ) {}
   stop() {
     this.version++;
+    this.preparedText = "";
+    this.resumePlayback = null;
     if (this.animationFrame !== null) cancelAnimationFrame(this.animationFrame);
     this.animationFrame = null;
     this.pending?.abort();
@@ -38,6 +43,10 @@ export class SpeechPlayback {
     this.onState({ loading: false, speaking: false, error: "" });
   }
   async speak(text: string) {
+    if (this.resumePlayback && this.preparedText === text) {
+      await this.resumePlayback();
+      return;
+    }
     this.stop();
     const version = this.version;
     const controller = new AbortController();
@@ -90,11 +99,6 @@ export class SpeechPlayback {
           });
         }
       };
-      await audio.play();
-      if (version !== this.version) {
-        audio.pause();
-        return;
-      }
       const tick = () => {
         if (version !== this.version) return;
         this.onState({
@@ -108,7 +112,53 @@ export class SpeechPlayback {
         });
         if (animation) this.animationFrame = requestAnimationFrame(tick);
       };
-      tick();
+      let resuming = false;
+      const resume = async () => {
+        if (resuming || version !== this.version) return;
+        resuming = true;
+        try {
+          await audio.play();
+          if (version !== this.version) {
+            audio.pause();
+            return;
+          }
+          this.preparedText = "";
+          this.resumePlayback = null;
+          tick();
+        } catch (cause) {
+          if (version !== this.version) return;
+          if (
+            cause &&
+            typeof cause === "object" &&
+            "name" in cause &&
+            cause.name === "NotAllowedError"
+          ) {
+            // Keep this exact element/clip so the next click can play it
+            // directly, without another network wait or usage reservation.
+            this.preparedText = text;
+            this.resumePlayback = resume;
+            this.onState({
+              loading: false,
+              speaking: false,
+              ready: true,
+              error: "",
+            });
+          } else {
+            this.stop();
+            this.onState({
+              loading: false,
+              speaking: false,
+              error:
+                cause instanceof Error
+                  ? cause.message
+                  : "Audio could not be played. Please try again.",
+            });
+          }
+        } finally {
+          resuming = false;
+        }
+      };
+      await resume();
     } catch (cause) {
       if (version !== this.version) return;
       this.stop();

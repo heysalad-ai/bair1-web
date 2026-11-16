@@ -123,6 +123,7 @@ export default function FleetView({
         </div>
         <BearCompanion
           mood={bear.mood}
+          contextKey={JSON.stringify([purpose, search, filter, page, devices.map(d => `${d.orgId}/${d.deviceId}`).sort()])}
           message={bear.message}
           summary={counts.total && counts.loading < counts.total ? fleetSpokenSummary(counts) : undefined}
           greet
