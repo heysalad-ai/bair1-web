@@ -3,8 +3,13 @@ import { readJsonObject } from "@/lib/request-limits";
 import { usageGate } from "@/lib/usage-budget";
 import { generateBearSpeech, MAX_SPEECH_CHARACTERS } from "@/lib/openai-speech";
 
+import {
+  faceServiceConfigured,
+  generateFaceAnimation,
+} from "@/lib/nvidia-face";
+
 export const runtime = "nodejs";
-export const maxDuration = 45;
+export const maxDuration = 60;
 export async function POST(request: Request) {
   const auth = await requireAuth(request);
   if (auth instanceof Response) return auth;
@@ -36,8 +41,20 @@ export async function POST(request: Request) {
       subject: auth.user.userId,
       signal: request.signal,
     });
+    let animation = null;
+    let faceStatus = "not-configured";
+    if (faceServiceConfigured() && !request.signal.aborted) {
+      try {
+        animation = await generateFaceAnimation(speech.audio, request.signal);
+        faceStatus = "ready";
+      } catch {
+        faceStatus = "unavailable";
+      }
+    }
     return Response.json(
       {
+        animation,
+        faceStatus,
         audio: `data:audio/wav;base64,${speech.audio.toString("base64")}`,
         text: speech.transcript,
       },
