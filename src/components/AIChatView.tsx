@@ -84,7 +84,13 @@ export default function AIChatView({ deviceId, lat, lng }: Props) {
         const audio = new Audio(data.audio);
         audioRef.current = audio;
         audio.onended = () => setIsVoicePlaying(false);
-        audio.play();
+        audio.onerror = () => {
+          setIsVoicePlaying(false);
+          setBriefingText(
+            `${data.text} Voice could not be played. Please try again.`,
+          );
+        };
+        await audio.play();
       } else {
         setIsVoicePlaying(false);
       }
@@ -191,6 +197,7 @@ export default function AIChatView({ deviceId, lat, lng }: Props) {
             </>
           )}
         </button>
+        <p className="mt-2 text-xs text-ink/80">AI-generated voice · OpenAI</p>
         {briefingText && !isVoicePlaying && (
           <div className="mt-2 bg-surface border border-border rounded-xl p-3 text-xs text-ink/80">
             {briefingText}
